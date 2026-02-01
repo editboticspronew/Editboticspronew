@@ -2,7 +2,7 @@ export const APP_NAME = 'EditBotics Pro';
 export const APP_VERSION = '2.0.0';
 
 // OpenAI API Configuration
-export const OPENAI_API_KEY = process.env.NEXT_PUBLIC_OPENAI_API_KEY || "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";
+export const OPENAI_API_KEY = process.env.NEXT_PUBLIC_OPENAI_API_KEY;
 
 // Video Analysis Configuration
 export const VIDEO_ANALYSIS_PROVIDER = process.env.NEXT_PUBLIC_VIDEO_ANALYSIS_PROVIDER || 'openai'; // 'google' | 'openai' | 'openai-vision'
