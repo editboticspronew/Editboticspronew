@@ -28,6 +28,7 @@ export interface Project {
   status: 'draft' | 'in-progress' | 'completed';
   duration?: number;
   tags?: string[];
+  emoji?: string;
 }
 
 interface ProjectsState {

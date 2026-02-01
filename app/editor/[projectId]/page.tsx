@@ -388,7 +388,7 @@ export default function VideoEditorPage() {
               tracks={tracks}
               textOverlays={textOverlays}
               duration={duration}
-              projectName={project?.name || project?.title || 'Untitled'}
+              projectName={project?.title || 'Untitled'}
             />
           </Toolbar>
         </AppBar>
