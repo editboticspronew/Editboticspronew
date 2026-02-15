@@ -23,11 +23,11 @@ export interface TranscriptionResult {
 }
 
 /**
- * Transcribe audio using OpenAI Whisper API
+ * Transcribe audio using OpenAI Whisper API via Next.js API route
  */
 export async function transcribeAudio(
-  audioFile: File | Blob,
-  apiKey: string,
+  audioFile: File | Blob | string, // Now accepts URL as string
+  apiKey: string, // Kept for backward compatibility but not used (server uses env var)
   options: {
     language?: string; // e.g., 'en', 'es', 'fr' (auto-detect if not provided)
     prompt?: string; // Optional context to improve accuracy
@@ -36,10 +36,15 @@ export async function transcribeAudio(
   } = {}
 ): Promise<TranscriptionResult> {
   const formData = new FormData();
-  formData.append('file', audioFile);
-  formData.append('model', 'whisper-1');
-  formData.append('response_format', 'verbose_json'); // Get timestamps
-  formData.append('timestamp_granularities[]', options.timestampGranularity || 'segment');
+  
+  // If string is passed, treat it as a URL
+  if (typeof audioFile === 'string') {
+    formData.append('fileUrl', audioFile);
+  } else {
+    formData.append('file', audioFile);
+  }
+  
+  formData.append('timestampGranularity', options.timestampGranularity || 'segment');
 
   if (options.language) {
     formData.append('language', options.language);
@@ -51,17 +56,14 @@ export async function transcribeAudio(
     formData.append('temperature', String(options.temperature));
   }
 
-  const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+  const response = await fetch('/api/transcribe', {
     method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-    },
     body: formData,
   });
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: 'Unknown error' }));
-    throw new Error(`Transcription failed: ${error.error?.message || response.statusText}`);
+    throw new Error(`Transcription failed: ${error.error || response.statusText}`);
   }
 
   const result = await response.json();

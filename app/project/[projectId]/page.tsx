@@ -34,7 +34,7 @@ import AddVideoDialog from '@/components/AddVideoDialog';
 import { useAuth } from '@/hooks/useAuth';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import { fetchUserProjects } from '@/store/projectsSlice';
-import { fetchProjectFiles, uploadProjectFile } from '@/store/filesSlice';
+import { fetchProjectFiles, saveProjectFileMetadata } from '@/store/filesSlice';
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -77,27 +77,31 @@ export default function ProjectDetailPage() {
     }
   }, [projectId, dispatch]);
 
-  const handleVideoUpload = async (file: File, videoType: string, transcription: string, aiAnalysis?: any) => {
+  const handleVideoUpload = async (
+    fileMetadata: { name: string; size: number; url: string; storagePath: string },
+    videoType: string,
+    transcription: string,
+    aiAnalysis?: any
+  ) => {
     if (!user?.uid || !projectId) {
       throw new Error('User or project ID not found');
     }
 
+    // Save metadata to Firestore (file already uploaded to Storage)
     await dispatch(
-      uploadProjectFile({
-        file,
+      saveProjectFileMetadata({
         projectId,
         userId: user.uid,
+        name: fileMetadata.name,
         type: 'video',
+        size: fileMetadata.size,
+        url: fileMetadata.url,
+        storagePath: fileMetadata.storagePath,
         transcription,
         videoType,
+        aiAnalysis,
       })
     ).unwrap();
-    
-    // TODO: Save aiAnalysis to database if provided
-    if (aiAnalysis) {
-      console.log('AI Analysis received:', aiAnalysis);
-      // Will implement saving analysis data in next iteration
-    }
   };
 
   const formatFileSize = (bytes: number) => {

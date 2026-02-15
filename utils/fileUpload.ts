@@ -82,7 +82,7 @@ export const deleteFile = async (path: string): Promise<void> => {
 export const uploadVideoToFirebase = async (
   file: File,
   videoType: string
-): Promise<{ url: string; storagePath: string }> => {
+): Promise<{ url: string; storagePath: string; gsPath: string }> => {
   try {
     // Check if user is authenticated
     const { auth } = await import('@/lib/firebase/init');
@@ -105,14 +105,15 @@ export const uploadVideoToFirebase = async (
     const url = await uploadFile(file, storagePath);
     
     // Get gs:// format path for Google Cloud
-    const bucketName = storage.app.options.storageBucket;
+    const bucketName = storage.app.options.storageBucket || 'editbotics-326dd.firebasestorage.app';
     const gsPath = `gs://${bucketName}/${storagePath}`;
     
-    console.log('✅ Upload complete:', { url, gsPath });
+    console.log('✅ Upload complete:', { url, storagePath, gsPath });
     
     return {
       url, // https:// URL for browser access
-      storagePath: gsPath, // gs:// path for Google Cloud Video Intelligence
+      storagePath, // plain path for Firebase Storage operations (delete, etc.)
+      gsPath, // gs:// path for Google Cloud Video Intelligence
     };
   } catch (error: any) {
     console.error('❌ Upload failed:', error);

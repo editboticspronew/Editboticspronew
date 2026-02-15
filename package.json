@@ -21,6 +21,7 @@
     "@reduxjs/toolkit": "^2.11.2",
     "fabric": "^7.1.0",
     "firebase": "^12.8.0",
+    "google-auth-library": "^10.5.0",
     "jsonwebtoken": "^9.0.3",
     "konva": "^10.2.0",
     "next": "16.1.4",

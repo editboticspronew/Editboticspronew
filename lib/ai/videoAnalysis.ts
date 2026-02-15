@@ -58,10 +58,12 @@ interface AnalysisResult {
  */
 export async function analyzeVideoWithGoogle(
   videoUrl: string,
-  storagePath: string
+  storagePath: string,
+  features?: string[]
 ): Promise<AnalysisResult> {
   try {
     console.log('📹 Calling server-side Google Cloud Video Intelligence API...');
+    console.log('✨ Selected features:', features);
     
     // Call our Next.js API route instead of trying to authenticate in browser
     const response = await fetch('/api/analyze-video', {
@@ -72,6 +74,7 @@ export async function analyzeVideoWithGoogle(
       body: JSON.stringify({
         videoUrl,
         storagePath,
+        features, // Pass selected features to API
       }),
     });
 

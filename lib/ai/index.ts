@@ -36,16 +36,18 @@ export async function analyzeVideo(
   videoName: string,
   storagePath?: string,
   transcript?: string,
-  duration?: number
+  duration?: number,
+  features?: string[]
 ): Promise<{ analysis: UnifiedAnalysisResult; recommendations: string; provider: AnalysisProvider }> {
   
   const provider = VIDEO_ANALYSIS_PROVIDER as AnalysisProvider;
   
   console.log(`📹 Video Analysis using: ${provider.toUpperCase()}`);
+  console.log(`✨ Selected features:`, features);
 
   switch (provider) {
     case 'google':
-      return await analyzeWithGoogle(videoUrl, storagePath!, transcript);
+      return await analyzeWithGoogle(videoUrl, storagePath!, transcript, features);
     
     case 'openai-vision':
       return await analyzeWithOpenAIVision(videoUrl, videoName, transcript, duration);
@@ -62,11 +64,12 @@ export async function analyzeVideo(
 async function analyzeWithGoogle(
   videoUrl: string,
   storagePath: string,
-  transcript?: string
+  transcript?: string,
+  features?: string[]
 ): Promise<{ analysis: UnifiedAnalysisResult; recommendations: string; provider: AnalysisProvider }> {
   try {
     // Google Cloud analysis
-    const googleAnalysis = await analyzeVideoWithGoogle(videoUrl, storagePath);
+    const googleAnalysis = await analyzeVideoWithGoogle(videoUrl, storagePath, features);
     
     // Generate recommendations with OpenAI
     const recommendations = await googleRecommendations(googleAnalysis, transcript);

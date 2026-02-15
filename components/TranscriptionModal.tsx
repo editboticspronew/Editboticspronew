@@ -91,25 +91,19 @@ export default function TranscriptionModal({ open, onClose, audioFile, onSaveTra
     setLoading(true);
 
     try {
-      let file: File;
-
-      // Handle both local File objects and remote URLs
-      if (audioFile.file) {
-        // Local file (before upload)
-        file = audioFile.file;
-      } else if (audioFile.url) {
-        // Remote file (already uploaded)
-        const response = await fetch(audioFile.url);
-        const blob = await response.blob();
-        file = new File([blob], audioFile.name, { type: blob.type });
-      } else {
+      // Use URL directly if available, otherwise use the File object
+      const audioSource = audioFile.url || audioFile.file;
+      
+      if (!audioSource) {
         throw new Error('No audio file or URL provided');
       }
 
-      // Validate file size (OpenAI Whisper limit: 25 MB)
-      const maxSize = 25 * 1024 * 1024; // 25 MB
-      if (file.size > maxSize) {
-        throw new Error(`File size exceeds OpenAI Whisper API limit of 25 MB. Current size: ${(file.size / (1024 * 1024)).toFixed(2)} MB`);
+      // For File objects, validate file size (OpenAI Whisper limit: 25 MB)
+      if (audioSource instanceof File) {
+        const maxSize = 25 * 1024 * 1024; // 25 MB
+        if (audioSource.size > maxSize) {
+          throw new Error(`File size exceeds OpenAI Whisper API limit of 25 MB. Current size: ${(audioSource.size / (1024 * 1024)).toFixed(2)} MB`);
+        }
       }
 
       // Get OpenAI API key from environment
@@ -119,8 +113,10 @@ export default function TranscriptionModal({ open, onClose, audioFile, onSaveTra
         throw new Error('OpenAI API key not configured.');
       }
 
-      // Transcribe using OpenAI Whisper
-      const result = await transcribeAudio(file, apiKey, {
+      console.log('🎤 Transcribing from:', audioFile.url ? 'URL' : 'file');
+
+      // Transcribe using OpenAI Whisper (now accepts both File and URL string)
+      const result = await transcribeAudio(audioSource, apiKey, {
         language: selectedLanguage,
         timestampGranularity: 'segment',
       });

@@ -25,6 +25,9 @@ import {
   List,
   ListItem,
   ListItemText,
+  Checkbox,
+  FormControlLabel,
+  FormGroup,
 } from '@mui/material';
 import {
   Close,
@@ -45,7 +48,17 @@ import { analyzeVideo, getProviderDisplayName, isProviderConfigured } from '@/li
 interface AddVideoDialogProps {
   open: boolean;
   onClose: () => void;
-  onVideoUpload: (file: File, videoType: string, transcription: string, aiAnalysis?: any) => Promise<void>;
+  onVideoUpload: (
+    fileMetadata: {
+      name: string;
+      size: number;
+      url: string;
+      storagePath: string;
+    },
+    videoType: string,
+    transcription: string,
+    aiAnalysis?: any
+  ) => Promise<void>;
   preSelectedFile?: File | null;
 }
 
@@ -57,6 +70,24 @@ const videoTypes = [
   { id: 'training', name: 'Training', icon: <School />, color: '#10b981' },
 ];
 
+// Google Cloud Video Intelligence Available Features
+const VIDEO_ANALYSIS_FEATURES = [
+  { id: 'LABEL_DETECTION', name: 'Label Detection', description: 'Detect objects, locations, activities, animal species, products' },
+  { id: 'SHOT_CHANGE_DETECTION', name: 'Shot Change Detection', description: 'Detect scene changes and breaks between shots' },
+  { id: 'EXPLICIT_CONTENT_DETECTION', name: 'Explicit Content Detection', description: 'Detect adult content in videos' },
+  { id: 'FACE_DETECTION', name: 'Face Detection', description: 'Detect and track faces in the video' },
+  { id: 'SPEECH_TRANSCRIPTION', name: 'Speech Transcription', description: 'Transcribe speech to text (Google Cloud)' },
+  { id: 'TEXT_DETECTION', name: 'Text Detection', description: 'Detect and extract text appearing in the video' },
+  { id: 'OBJECT_TRACKING', name: 'Object Tracking', description: 'Detect and track objects throughout the video (⚠️ Frame-heavy, slower)', isFrameHeavy: true },
+  { id: 'LOGO_RECOGNITION', name: 'Logo Recognition', description: 'Detect and recognize brand logos (⚠️ Frame-heavy)', isFrameHeavy: true },
+  { id: 'PERSON_DETECTION', name: 'Person Detection', description: 'Detect and track people in the video (⚠️ Frame-heavy, slower)', isFrameHeavy: true },
+];
+
+// Default features - exclude frame-heavy features that cause bloated responses
+const DEFAULT_FEATURES = VIDEO_ANALYSIS_FEATURES
+  .filter(f => !f.isFrameHeavy)
+  .map(f => f.id);
+
 export default function AddVideoDialog({ open, onClose, onVideoUpload, preSelectedFile }: AddVideoDialogProps) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
@@ -64,7 +95,8 @@ export default function AddVideoDialog({ open, onClose, onVideoUpload, preSelect
   const [selectedType, setSelectedType] = useState<string>('');
   const [selectedFile, setSelectedFile] = useState<File | null>(preSelectedFile || null);
   const [firebaseUrl, setFirebaseUrl] = useState<string>(''); // Firebase Storage URL
-  const [storagePath, setStoragePath] = useState<string>(''); // gs:// path
+  const [storagePath, setStoragePath] = useState<string>(''); // plain path for Firebase ops
+  const [gsPath, setGsPath] = useState<string>(''); // gs:// path for Google Cloud
   const [transcribing, setTranscribing] = useState(false);
   const [transcription, setTranscription] = useState('');
   const [analyzing, setAnalyzing] = useState(false);
@@ -72,6 +104,9 @@ export default function AddVideoDialog({ open, onClose, onVideoUpload, preSelect
   const [skipAnalysis, setSkipAnalysis] = useState(false);
   const [error, setError] = useState('');
   const [uploading, setUploading] = useState(false);
+  
+  // Video analysis features (frame-heavy features unchecked by default)
+  const [selectedFeatures, setSelectedFeatures] = useState<string[]>(DEFAULT_FEATURES);
 
   // When preSelectedFile is provided, initialize selectedFile
   React.useEffect(() => {
@@ -96,6 +131,10 @@ export default function AddVideoDialog({ open, onClose, onVideoUpload, preSelect
         setAnalysis(null);
         setSkipAnalysis(false);
         setError('');
+        setFirebaseUrl('');
+        setStoragePath('');
+        setGsPath('');
+        setSelectedFeatures(DEFAULT_FEATURES);
       }, 300);
       return () => clearTimeout(timer);
     }
@@ -112,6 +151,10 @@ export default function AddVideoDialog({ open, onClose, onVideoUpload, preSelect
       setAnalysis(null);
       setSkipAnalysis(false);
       setError('');
+      setFirebaseUrl('');
+      setStoragePath('');
+      setGsPath('');
+      setSelectedFeatures(DEFAULT_FEATURES);
       onClose();
     }
   };
@@ -165,6 +208,7 @@ export default function AddVideoDialog({ open, onClose, onVideoUpload, preSelect
       
       setFirebaseUrl(result.url);
       setStoragePath(result.storagePath);
+      setGsPath(result.gsPath);
       setUploading(false);
       
       // Stay on uploading step to show completion message
@@ -178,7 +222,7 @@ export default function AddVideoDialog({ open, onClose, onVideoUpload, preSelect
   };
 
   const handleTranscribe = async () => {
-    if (!selectedFile) return;
+    if (!selectedFile && !firebaseUrl) return;
 
     setError('');
     setTranscribing(true);
@@ -194,9 +238,12 @@ export default function AddVideoDialog({ open, onClose, onVideoUpload, preSelect
       // Import transcription utility
       const { transcribeAudio } = await import('@/utils/audioTranscription');
 
-      // Use the original file from memory (already uploaded to Firebase, no need to download)
-      // This avoids downloading from Firebase just to re-upload to OpenAI
-      const result = await transcribeAudio(selectedFile, apiKey, {
+      // Use Firebase URL if available (already uploaded), otherwise use file from memory
+      const audioSource = firebaseUrl || selectedFile!;
+      
+      console.log('🎤 Transcribing audio from:', firebaseUrl ? 'Firebase URL' : 'local file');
+      
+      const result = await transcribeAudio(audioSource, apiKey, {
         timestampGranularity: 'segment',
       });
 
@@ -235,9 +282,10 @@ export default function AddVideoDialog({ open, onClose, onVideoUpload, preSelect
       const result = await analyzeVideo(
         videoUrl,
         videoName,
-        storagePath || undefined, // Google Cloud needs gs:// path
+        gsPath || undefined, // Google Cloud needs gs:// path
         transcription,
-        undefined // duration - could calculate from video
+        undefined, // duration - could calculate from video
+        selectedFeatures // Pass selected features to API
       );
 
       setAnalysis(result);
@@ -252,18 +300,48 @@ export default function AddVideoDialog({ open, onClose, onVideoUpload, preSelect
 
   const handleUploadVideo = async () => {
     // Video is already uploaded to Firebase - just save metadata
-    if (!selectedFile || !selectedType) return;
+    if (!selectedFile || !selectedType || !firebaseUrl || !storagePath) {
+      setError('Video not uploaded. Please start over.');
+      return;
+    }
 
     setUploading(true);
     setError('');
 
     try {
       // Notify parent to save metadata (video already in Firebase)
-      await onVideoUpload(selectedFile, selectedType, transcription, analysis);
-      handleClose();
+      await onVideoUpload(
+        {
+          name: selectedFile.name,
+          size: selectedFile.size,
+          url: firebaseUrl,
+          storagePath: storagePath, // plain path for Firebase operations
+        },
+        selectedType,
+        transcription,
+        analysis
+      );
+      
+      // Reset state before closing
+      setUploading(false);
+      setStep('type');
+      setSelectedType('');
+      setSelectedFile(null);
+      setFirebaseUrl('');
+      setStoragePath('');
+      setGsPath('');
+      setTranscribing(false);
+      setTranscription('');
+      setAnalyzing(false);
+      setAnalysis(null);
+      setSkipAnalysis(false);
+      setError('');
+      setSelectedFeatures(DEFAULT_FEATURES);
+      
+      // Close the modal
+      onClose();
     } catch (err: any) {
       setError(err.message || 'Failed to save video metadata');
-    } finally {
       setUploading(false);
     }
   };
@@ -678,12 +756,95 @@ export default function AddVideoDialog({ open, onClose, onVideoUpload, preSelect
                 </Alert>
               )}
 
+              {/* Feature Selection Checkboxes */}
+              {!analyzing && (
+                <Card variant="outlined" sx={{ mb: 2, p: 2, bgcolor: 'background.default' }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                    <Typography variant="subtitle2" fontWeight={600}>
+                      Select Analysis Features
+                    </Typography>
+                    <Box sx={{ display: 'flex', gap: 1 }}>
+                      <Button 
+                        size="small" 
+                        onClick={() => setSelectedFeatures(VIDEO_ANALYSIS_FEATURES.map(f => f.id))}
+                        disabled={selectedFeatures.length === VIDEO_ANALYSIS_FEATURES.length}
+                      >
+                        Select All
+                      </Button>
+                      <Button 
+                        size="small" 
+                        onClick={() => setSelectedFeatures([])}
+                        disabled={selectedFeatures.length === 0}
+                      >
+                        Clear All
+                      </Button>
+                    </Box>
+                  </Box>
+                  <FormGroup>
+                    {VIDEO_ANALYSIS_FEATURES.map((feature) => (
+                      <FormControlLabel
+                        key={feature.id}
+                        control={
+                          <Checkbox
+                            checked={selectedFeatures.includes(feature.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedFeatures([...selectedFeatures, feature.id]);
+                              } else {
+                                setSelectedFeatures(selectedFeatures.filter(f => f !== feature.id));
+                              }
+                            }}
+                            size="small"
+                          />
+                        }
+                        label={
+                          <Box>
+                            <Typography 
+                              variant="body2" 
+                              fontWeight={500}
+                              color={feature.isFrameHeavy ? 'warning.main' : 'text.primary'}
+                            >
+                              {feature.name}
+                            </Typography>
+                            <Typography 
+                              variant="caption" 
+                              color={feature.isFrameHeavy ? 'warning.light' : 'text.secondary'}
+                            >
+                              {feature.description}
+                            </Typography>
+                          </Box>
+                        }
+                        sx={{ 
+                          mb: 1,
+                          ...(feature.isFrameHeavy && {
+                            bgcolor: 'rgba(255, 152, 0, 0.05)',
+                            borderRadius: 1,
+                            px: 1,
+                            py: 0.5,
+                          })
+                        }}
+                      />
+                    ))}
+                  </FormGroup>
+                  {selectedFeatures.length === 0 && (
+                    <Alert severity="warning" sx={{ mt: 1 }}>
+                      Please select at least one feature to analyze
+                    </Alert>
+                  )}
+                  {selectedFeatures.some(f => VIDEO_ANALYSIS_FEATURES.find(vf => vf.id === f)?.isFrameHeavy) && (
+                    <Alert severity="info" sx={{ mt: 1 }}>
+                      <strong>Frame-heavy features selected:</strong> These features analyze every frame (10 fps) and may take longer and produce larger responses. Our backend optimizes by sampling key frames.
+                    </Alert>
+                  )}
+                </Card>
+              )}
+
               {analyzing && (
                 <Box sx={{ mb: 2 }}>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
                     <CircularProgress size={20} />
                     <Typography variant="body2" color="text.secondary">
-                      Analyzing video with AI...
+                      Analyzing video with AI ({selectedFeatures.length} features)...
                     </Typography>
                   </Box>
                   <LinearProgress />
@@ -1102,7 +1263,7 @@ export default function AddVideoDialog({ open, onClose, onVideoUpload, preSelect
             <Button
               onClick={handleAnalyze}
               variant="contained"
-              disabled={analyzing || !transcription}
+              disabled={analyzing || !transcription || selectedFeatures.length === 0}
               sx={{
                 background: 'linear-gradient(135deg, #6366f1 0%, #ec4899 100%)',
                 '&:hover': {
@@ -1124,7 +1285,7 @@ export default function AddVideoDialog({ open, onClose, onVideoUpload, preSelect
                 },
               }}
             >
-              {uploading ? 'Uploading...' : 'Upload Video'}
+              {uploading ? 'Saving...' : 'Finish'}
             </Button>
           )}
         </>

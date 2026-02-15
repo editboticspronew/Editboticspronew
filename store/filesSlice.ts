@@ -33,6 +33,7 @@ export interface ProjectFile {
   thumbnail?: string;
   transcription?: string;
   videoType?: string;
+  aiAnalysis?: any; // AI video analysis results
 }
 
 interface FilesState {
@@ -173,6 +174,82 @@ export const uploadProjectFile = createAsyncThunk(
   }
 );
 
+/**
+ * Save project file metadata without uploading (file already uploaded)
+ * Use this when the file has already been uploaded to Firebase Storage
+ */
+export const saveProjectFileMetadata = createAsyncThunk(
+  'files/saveMetadata',
+  async (
+    {
+      projectId,
+      userId,
+      name,
+      type,
+      size,
+      url,
+      storagePath,
+      transcription,
+      videoType,
+      aiAnalysis,
+    }: {
+      projectId: string;
+      userId: string;
+      name: string;
+      type: 'video' | 'audio' | 'image';
+      size: number;
+      url: string;
+      storagePath: string;
+      transcription?: string;
+      videoType?: string;
+      aiAnalysis?: any;
+    },
+    { rejectWithValue }
+  ) => {
+    try {
+      // Save metadata to Firestore (file already uploaded)
+      const fileData: any = {
+        projectId,
+        userId,
+        name,
+        originalName: name,
+        type,
+        size,
+        url,
+        storagePath,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      };
+
+      // Add optional metadata
+      if (transcription) fileData.transcription = transcription;
+      if (videoType) fileData.videoType = videoType;
+      if (aiAnalysis) fileData.aiAnalysis = aiAnalysis;
+
+      const docRef = await addDoc(collection(db, 'files'), fileData);
+
+      return {
+        id: docRef.id,
+        projectId,
+        userId,
+        name,
+        originalName: name,
+        type,
+        size,
+        url,
+        storagePath,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        transcription,
+        videoType,
+        aiAnalysis,
+      } as ProjectFile;
+    } catch (error: any) {
+      return rejectWithValue(error.message);
+    }
+  }
+);
+
 export const deleteProjectFile = createAsyncThunk(
   'files/delete',
   async ({ fileId, storagePath }: { fileId: string; storagePath: string }, { rejectWithValue }) => {
@@ -243,6 +320,18 @@ const filesSlice = createSlice({
         state.files.push(action.payload);
       })
       .addCase(uploadProjectFile.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload as string;
+      })
+      .addCase(saveProjectFileMetadata.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(saveProjectFileMetadata.fulfilled, (state, action) => {
+        state.loading = false;
+        state.files.push(action.payload);
+      })
+      .addCase(saveProjectFileMetadata.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload as string;
       })
