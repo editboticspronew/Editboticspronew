@@ -21,6 +21,7 @@ import { FFmpeg } from '@ffmpeg/ffmpeg';
 import { toBlobURL } from '@ffmpeg/util';
 import { ref, getBlob } from 'firebase/storage';
 import { storage } from '@/lib/firebase/init';
+import VideoPlayer from '@/components/VideoPlayer';
 
 interface Clip {
   id: string;
@@ -464,7 +465,9 @@ export const VideoExport: React.FC<VideoExportProps> = ({
 
           {exportUrl && !exporting && (
             <Box>
-              <video src={exportUrl} controls style={{ width: '100%', marginBottom: 16 }} />
+              <Box sx={{ mb: 2 }}>
+                <VideoPlayer url={exportUrl} maxHeight={400} borderRadius={8} />
+              </Box>
               <Alert severity="success">
                 Video exported successfully! Click download to save.
               </Alert>

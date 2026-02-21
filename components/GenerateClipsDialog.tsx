@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Dialog,
@@ -45,6 +45,7 @@ import {
   OpenInNew,
   Subtitles,
 } from '@mui/icons-material';
+import VideoPlayer from './VideoPlayer';
 
 interface TranscriptSegment {
   text: string;
@@ -89,7 +90,6 @@ function ClipPreviewPlayer({
   segments: TranscriptSegment[];
   showSubtitles: boolean;
 }) {
-  const videoRef = useRef<HTMLVideoElement>(null);
   const [currentText, setCurrentText] = useState('');
 
   const clipSegments = useMemo(
@@ -104,49 +104,28 @@ function ClipPreviewPlayer({
     [clip, segments]
   );
 
-  const handleTimeUpdate = useCallback(() => {
-    if (!videoRef.current || !showSubtitles) {
-      setCurrentText('');
-      return;
-    }
-    const t = videoRef.current.currentTime;
-    const seg = clipSegments.find((s) => t >= s.relStart && t <= s.relEnd);
-    setCurrentText(seg?.text || '');
-  }, [clipSegments, showSubtitles]);
+  const handleTimeUpdate = useCallback(
+    (t: number) => {
+      if (!showSubtitles) {
+        setCurrentText('');
+        return;
+      }
+      const seg = clipSegments.find((s) => t >= s.relStart && t <= s.relEnd);
+      setCurrentText(seg?.text || '');
+    },
+    [clipSegments, showSubtitles]
+  );
 
   return (
-    <Box sx={{ position: 'relative', borderRadius: 1, overflow: 'hidden', bgcolor: 'black', mb: 2 }}>
-      <video
-        ref={videoRef}
-        src={clip.objectUrl}
-        controls
-        autoPlay
-        onTimeUpdate={handleTimeUpdate}
-        style={{ width: '100%', maxHeight: 300, display: 'block' }}
-      />
-      {showSubtitles && currentText && (
-        <Box
-          sx={{
-            position: 'absolute',
-            bottom: 50,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            bgcolor: 'rgba(0,0,0,0.75)',
-            color: 'white',
-            px: 2,
-            py: 0.5,
-            borderRadius: 1,
-            maxWidth: '90%',
-            textAlign: 'center',
-            pointerEvents: 'none',
-          }}
-        >
-          <Typography variant="body2" sx={{ fontSize: '0.85rem', lineHeight: 1.4 }}>
-            {currentText}
-          </Typography>
-        </Box>
-      )}
-    </Box>
+    <VideoPlayer
+      url={clip.objectUrl}
+      autoPlay
+      compact
+      maxHeight={300}
+      onTimeUpdate={handleTimeUpdate}
+      subtitleText={showSubtitles ? currentText : undefined}
+      borderRadius={8}
+    />
   );
 }
 
@@ -746,11 +725,11 @@ export default function GenerateClipsDialog({ open, onClose, file, projectId }: 
                     </Box>
                     <Chip label={formatFileSize(mergedVideo.fileSize)} size="small" color="success" />
                   </Box>
-                  <Box sx={{ borderRadius: 1, overflow: 'hidden', bgcolor: 'black', mb: 2 }}>
-                    <video
-                      src={mergedVideo.objectUrl}
-                      controls
-                      style={{ width: '100%', maxHeight: 400, display: 'block' }}
+                  <Box sx={{ mb: 2 }}>
+                    <VideoPlayer
+                      url={mergedVideo.objectUrl}
+                      maxHeight={400}
+                      borderRadius={8}
                     />
                   </Box>
                   <Button
