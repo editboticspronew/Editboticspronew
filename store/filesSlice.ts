@@ -8,6 +8,7 @@ import {
   getDocs,
   doc,
   deleteDoc,
+  updateDoc,
   query,
   where,
   orderBy,
@@ -32,6 +33,7 @@ export interface ProjectFile {
   duration?: number;
   thumbnail?: string;
   transcription?: string;
+  transcriptionSegments?: { text: string; start: number; end: number; words?: { text: string; start: number; end: number }[] }[];
   videoType?: string;
   aiAnalysis?: any; // AI video analysis results
 }
@@ -250,6 +252,48 @@ export const saveProjectFileMetadata = createAsyncThunk(
   }
 );
 
+/**
+ * Update project file metadata in Firestore (e.g., add transcription or AI analysis)
+ * Use this for incremental saves during the upload pipeline
+ */
+export const updateProjectFileMetadata = createAsyncThunk(
+  'files/updateMetadata',
+  async (
+    {
+      fileId,
+      updates,
+    }: {
+      fileId: string;
+      updates: {
+        transcription?: string;
+        transcriptionSegments?: { text: string; start: number; end: number; words?: { text: string; start: number; end: number }[] }[];
+        aiAnalysis?: any;
+        videoType?: string;
+        generatedClips?: any[];
+      };
+    },
+    { rejectWithValue }
+  ) => {
+    try {
+      const updateData: any = {
+        ...updates,
+        updatedAt: serverTimestamp(),
+      };
+
+      // Remove undefined values
+      Object.keys(updateData).forEach(key => {
+        if (updateData[key] === undefined) delete updateData[key];
+      });
+
+      await updateDoc(doc(db, 'files', fileId), updateData);
+
+      return { fileId, updates };
+    } catch (error: any) {
+      return rejectWithValue(error.message);
+    }
+  }
+);
+
 export const deleteProjectFile = createAsyncThunk(
   'files/delete',
   async ({ fileId, storagePath }: { fileId: string; storagePath: string }, { rejectWithValue }) => {
@@ -333,6 +377,20 @@ const filesSlice = createSlice({
       })
       .addCase(saveProjectFileMetadata.rejected, (state, action) => {
         state.loading = false;
+        state.error = action.payload as string;
+      })
+      .addCase(updateProjectFileMetadata.fulfilled, (state, action) => {
+        const { fileId, updates } = action.payload;
+        const fileIndex = state.files.findIndex(f => f.id === fileId);
+        if (fileIndex !== -1) {
+          state.files[fileIndex] = {
+            ...state.files[fileIndex],
+            ...updates,
+            updatedAt: new Date(),
+          };
+        }
+      })
+      .addCase(updateProjectFileMetadata.rejected, (state, action) => {
         state.error = action.payload as string;
       })
       .addCase(deleteProjectFile.fulfilled, (state, action) => {

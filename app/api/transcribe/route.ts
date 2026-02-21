@@ -4,15 +4,14 @@ export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
     const file = formData.get('file') as File | null;
-    const fileUrl = formData.get('fileUrl') as string | null;
     const language = formData.get('language') as string | null;
     const prompt = formData.get('prompt') as string | null;
     const temperature = formData.get('temperature') as string | null;
     const timestampGranularity = formData.get('timestampGranularity') as string | null;
 
-    if (!file && !fileUrl) {
+    if (!file) {
       return NextResponse.json(
-        { error: 'Either file or fileUrl is required' },
+        { error: 'Audio file is required. Extract audio from video on the client before sending.' },
         { status: 400 }
       );
     }
@@ -28,30 +27,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // If URL is provided, fetch the file first
-    let audioFile: File | Blob;
-    let fileName: string;
-    
-    if (fileUrl) {
-      console.log('📥 Fetching file from URL:', fileUrl);
-      const fileResponse = await fetch(fileUrl);
-      if (!fileResponse.ok) {
-        throw new Error(`Failed to fetch file from URL: ${fileResponse.statusText}`);
-      }
-      const blob = await fileResponse.blob();
-      // Extract filename from URL or use default
-      const urlParts = fileUrl.split('/');
-      fileName = urlParts[urlParts.length - 1].split('?')[0] || 'audio.mp4';
-      audioFile = new File([blob], fileName, { type: blob.type });
-      console.log('✅ File fetched from URL:', fileName);
-    } else {
-      audioFile = file!;
-      fileName = file!.name;
-    }
+    console.log('🎵 Received audio file:', file.name, `(${(file.size / 1024 / 1024).toFixed(2)} MB)`);
 
     // Create FormData for OpenAI API
     const openaiFormData = new FormData();
-    openaiFormData.append('file', audioFile);
+    openaiFormData.append('file', file);
     openaiFormData.append('model', 'whisper-1');
     openaiFormData.append('response_format', 'verbose_json');
     openaiFormData.append('timestamp_granularities[]', timestampGranularity || 'segment');
@@ -66,9 +46,7 @@ export async function POST(request: NextRequest) {
       openaiFormData.append('temperature', temperature);
     }
 
-    console.log('📤 Sending request to OpenAI...');
-    console.log('📤 File name:', fileName);
-    console.log('📤 File size:', audioFile.size);
+    console.log('📤 Sending audio to OpenAI Whisper...');
 
     // Call OpenAI API with retry logic for 502 errors
     let response;
@@ -85,7 +63,7 @@ export async function POST(request: NextRequest) {
             'Authorization': `Bearer ${apiKey}`,
           },
           body: openaiFormData,
-          signal: AbortSignal.timeout(60000), // 60 second timeout
+          signal: AbortSignal.timeout(120000), // 120 second timeout
         });
 
         console.log(`📥 OpenAI Response status (attempt ${attempts}):`, response.status);
@@ -112,8 +90,6 @@ export async function POST(request: NextRequest) {
     if (!response) {
       throw new Error('Failed to get response from OpenAI after retries');
     }
-
-    console.log('📥 OpenAI Response headers:', Object.fromEntries(response.headers.entries()));
 
     if (!response.ok) {
       const errorText = await response.text();

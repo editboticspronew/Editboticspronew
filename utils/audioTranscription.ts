@@ -26,8 +26,7 @@ export interface TranscriptionResult {
  * Transcribe audio using OpenAI Whisper API via Next.js API route
  */
 export async function transcribeAudio(
-  audioFile: File | Blob | string, // Now accepts URL as string
-  apiKey: string, // Kept for backward compatibility but not used (server uses env var)
+  audioFile: File | Blob, // Audio file (extract audio from video on the client before calling this)
   options: {
     language?: string; // e.g., 'en', 'es', 'fr' (auto-detect if not provided)
     prompt?: string; // Optional context to improve accuracy
@@ -37,12 +36,7 @@ export async function transcribeAudio(
 ): Promise<TranscriptionResult> {
   const formData = new FormData();
   
-  // If string is passed, treat it as a URL
-  if (typeof audioFile === 'string') {
-    formData.append('fileUrl', audioFile);
-  } else {
-    formData.append('file', audioFile);
-  }
+  formData.append('file', audioFile);
   
   formData.append('timestampGranularity', options.timestampGranularity || 'segment');
 

@@ -260,9 +260,9 @@ export const VideoExport: React.FC<VideoExportProps> = ({
       if (overlays.length > 0) {
         for (let i = 0; i < overlays.length; i++) {
           const { label, start, end, x, y } = overlays[i];
-          const nextLabel = i === overlays.length - 1 ? 'outv' : `tmp${i}`;
+          const nextLabel = i === overlays.length - 1 && textOverlays.length === 0 ? 'outv' : `tmp${i}`;
           filters.push(
-            `[${lastLabel}][${label}]overlay=${x}:${y}:enable='between(t\\,${start}\\,${end})'[${nextLabel}]`
+            `[${lastLabel}][${label}]overlay=${x}:${y}:enable='between(t,${start},${end})'[${nextLabel}]`
           );
           lastLabel = nextLabel;
         }
@@ -284,33 +284,41 @@ export const VideoExport: React.FC<VideoExportProps> = ({
           }
         }
 
-        // Apply text overlays
+        // Apply text overlays using textfile= to avoid quoting/escaping issues.
+        // Inline text='...' breaks when content contains apostrophes or special chars
+        // because they interfere with FFmpeg's filter_complex single-quote parsing.
         for (let i = 0; i < textOverlays.length; i++) {
           const text = textOverlays[i];
-          const label = i === textOverlays.length - 1 ? 'outv' : `text${i}`;
-          const escapedText = text.text.replace(/:/g, '\\:').replace(/'/g, "\\\\'");
+          const outputLabel = i === textOverlays.length - 1 ? 'outv' : `text${i}`;
           const endTime = text.startTime + text.duration;
           const fontFile = text.font ? `font${text.font}.ttf` : 'fontArial.ttf';
-          
-          // Convert percentage positions to pixel coordinates (video is 1920x1080)
-          // In preview we use transform: translate(-50%, -50%) to center text
-          // FFmpeg drawtext positions from top-left, so we need to adjust
+
+          // Write text content to a temp file to bypass all escaping issues
+          const textFileName = `overlay_text_${i}.txt`;
+          await ffmpeg.writeFile(textFileName, text.text);
+
+          // Use FFmpeg's built-in text_w / text_h expressions for accurate centering
+          // instead of estimating from character count
           const videoWidth = 1920;
           const videoHeight = 1080;
-          
-          // Convert from center-based percentage to top-left pixel coordinates
-          // We approximate text width/height for centering (rough estimate)
-          const estimatedTextWidth = text.text.length * (text.fontSize * 0.6);
-          const estimatedTextHeight = text.fontSize;
-          
-          const pixelX = Math.round((text.x / 100) * videoWidth - estimatedTextWidth / 2);
-          const pixelY = Math.round((text.y / 100) * videoHeight - estimatedTextHeight / 2);
-          
+          const anchorX = Math.round((text.x / 100) * videoWidth);
+          const anchorY = Math.round((text.y / 100) * videoHeight);
+
+          // x and y accept FFmpeg expressions — text_w/text_h are computed at render time
+          const xExpr = `(${anchorX}-text_w/2)`;
+          const yExpr = `(${anchorY}-text_h/2)`;
+
+          // enable expression: commas inside single quotes don't need escaping
           filters.push(
-            `[${lastLabel}]drawtext=fontfile=${fontFile}:text='${escapedText}':x=${pixelX}:y=${pixelY}:fontsize=${text.fontSize}:fontcolor=${text.color}:enable='between(t\\,${text.startTime.toFixed(3)}\\,${endTime.toFixed(3)})'[${label}]`
+            `[${lastLabel}]drawtext=fontfile=${fontFile}:textfile=${textFileName}:x=${xExpr}:y=${yExpr}:fontsize=${text.fontSize}:fontcolor=${text.color}:enable='between(t,${text.startTime.toFixed(3)},${endTime.toFixed(3)})'[${outputLabel}]`
           );
-          lastLabel = label;
+          lastLabel = outputLabel;
         }
+      }
+
+      // Safety: if no overlays or text created [outv], add a passthrough
+      if (lastLabel !== 'outv') {
+        filters.push(`[${lastLabel}]null[outv]`);
       }
 
       // Mix audio tracks

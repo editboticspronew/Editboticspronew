@@ -24,7 +24,6 @@ import {
 } from '@mui/material';
 import { Close, Translate as TranslateIcon } from '@mui/icons-material';
 import { transcribeAudio } from '@/utils/audioTranscription';
-import { OPENAI_API_KEY } from '@/lib/config/constants';
 
 interface TranscriptionModalProps {
   open: boolean;
@@ -91,32 +90,22 @@ export default function TranscriptionModal({ open, onClose, audioFile, onSaveTra
     setLoading(true);
 
     try {
-      // Use URL directly if available, otherwise use the File object
-      const audioSource = audioFile.url || audioFile.file;
-      
-      if (!audioSource) {
+      // Resolve audio source: if URL, fetch as blob; if File, use directly
+      let audioSource: File | Blob;
+      if (audioFile.file) {
+        audioSource = audioFile.file;
+      } else if (audioFile.url) {
+        const response = await fetch(audioFile.url);
+        if (!response.ok) throw new Error('Failed to fetch audio file from URL');
+        audioSource = await response.blob();
+      } else {
         throw new Error('No audio file or URL provided');
-      }
-
-      // For File objects, validate file size (OpenAI Whisper limit: 25 MB)
-      if (audioSource instanceof File) {
-        const maxSize = 25 * 1024 * 1024; // 25 MB
-        if (audioSource.size > maxSize) {
-          throw new Error(`File size exceeds OpenAI Whisper API limit of 25 MB. Current size: ${(audioSource.size / (1024 * 1024)).toFixed(2)} MB`);
-        }
-      }
-
-      // Get OpenAI API key from environment
-      const apiKey = OPENAI_API_KEY;
-      
-      if (!apiKey) {
-        throw new Error('OpenAI API key not configured.');
       }
 
       console.log('🎤 Transcribing from:', audioFile.url ? 'URL' : 'file');
 
-      // Transcribe using OpenAI Whisper (now accepts both File and URL string)
-      const result = await transcribeAudio(audioSource, apiKey, {
+      // Transcribe using OpenAI Whisper
+      const result = await transcribeAudio(audioSource, {
         language: selectedLanguage,
         timestampGranularity: 'segment',
       });
@@ -285,8 +274,8 @@ export default function TranscriptionModal({ open, onClose, audioFile, onSaveTra
               <Alert severity="info" sx={{ mt: 1 }}>
                 Select the target language and click "Transcribe" to generate the transcription.
               </Alert>
-              <Alert severity="warning" sx={{ mt: 1 }}>
-                <strong>Note:</strong> OpenAI Whisper API has a 25 MB file size limit. Large files may need to be compressed or split.
+              <Alert severity="info" sx={{ mt: 1 }}>
+                <strong>Note:</strong> Audio will be automatically extracted from video files in the browser before transcription.
               </Alert>
             </>
           )}

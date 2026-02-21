@@ -34,7 +34,7 @@ import AddVideoDialog from '@/components/AddVideoDialog';
 import { useAuth } from '@/hooks/useAuth';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import { fetchUserProjects } from '@/store/projectsSlice';
-import { fetchProjectFiles, saveProjectFileMetadata } from '@/store/filesSlice';
+import { fetchProjectFiles } from '@/store/filesSlice';
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -76,33 +76,6 @@ export default function ProjectDetailPage() {
       dispatch(fetchProjectFiles(projectId));
     }
   }, [projectId, dispatch]);
-
-  const handleVideoUpload = async (
-    fileMetadata: { name: string; size: number; url: string; storagePath: string },
-    videoType: string,
-    transcription: string,
-    aiAnalysis?: any
-  ) => {
-    if (!user?.uid || !projectId) {
-      throw new Error('User or project ID not found');
-    }
-
-    // Save metadata to Firestore (file already uploaded to Storage)
-    await dispatch(
-      saveProjectFileMetadata({
-        projectId,
-        userId: user.uid,
-        name: fileMetadata.name,
-        type: 'video',
-        size: fileMetadata.size,
-        url: fileMetadata.url,
-        storagePath: fileMetadata.storagePath,
-        transcription,
-        videoType,
-        aiAnalysis,
-      })
-    ).unwrap();
-  };
 
   const formatFileSize = (bytes: number) => {
     if (bytes === 0) return '0 Bytes';
@@ -245,7 +218,8 @@ export default function ProjectDetailPage() {
         <AddVideoDialog
           open={addVideoDialogOpen}
           onClose={() => setAddVideoDialogOpen(false)}
-          onVideoUpload={handleVideoUpload}
+          projectId={projectId}
+          userId={user?.uid || ''}
         />
       </Box>
     </ProtectedRoute>

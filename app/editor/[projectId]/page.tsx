@@ -164,6 +164,123 @@ export default function VideoEditorPage() {
     }
   }, [projectId, dispatch]);
 
+  // Load clips from Generate Clips dialog (via sessionStorage)
+  useEffect(() => {
+    const clipDataStr = sessionStorage.getItem(`editor_clips_${projectId}`);
+    if (!clipDataStr) return;
+
+    sessionStorage.removeItem(`editor_clips_${projectId}`);
+
+    try {
+      const clipData = JSON.parse(clipDataStr);
+      const { sourceFile, clips: clipDefs, transcriptionSegments } = clipData;
+
+      // Build video clips on the video track
+      let timelinePosition = 0;
+      const newVideoClips: Clip[] = clipDefs.map((cd: any, i: number) => {
+        const clip: Clip = {
+          id: `clip-${Date.now()}-${i}`,
+          fileId: sourceFile.id,
+          fileName: `${sourceFile.name} (Clip ${cd.index})`,
+          fileUrl: sourceFile.url,
+          fileType: 'video',
+          storagePath: sourceFile.storagePath,
+          startTime: timelinePosition,
+          duration: cd.duration,
+          trimStart: cd.start,
+          trimEnd: 0,
+        };
+        timelinePosition += cd.duration;
+        return clip;
+      });
+
+      // Build text overlays from transcript segments within each clip
+      let textTimelinePos = 0;
+      const newTextOverlays: any[] = [];
+      const newTextClips: Clip[] = [];
+
+      if (transcriptionSegments && transcriptionSegments.length > 0) {
+        clipDefs.forEach((cd: any) => {
+          const segs = transcriptionSegments.filter(
+            (s: any) => s.end > cd.start && s.start < cd.end
+          );
+
+          segs.forEach((seg: any) => {
+            const relStart = Math.max(0, seg.start - cd.start) + textTimelinePos;
+            const relEnd = Math.min(cd.duration, seg.end - cd.start) + textTimelinePos;
+            const dur = relEnd - relStart;
+
+            if (dur > 0.1) {
+              const overlayId = `text-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+              const trimmedText = seg.text.trim();
+              newTextOverlays.push({
+                id: overlayId,
+                text: trimmedText,
+                x: 50,
+                y: 85,
+                fontSize: 24,
+                color: '#FFFFFF',
+                font: 'Arial',
+                startTime: relStart,
+                duration: dur,
+              });
+              newTextClips.push({
+                id: overlayId,
+                fileId: 'text',
+                fileName: trimmedText.length > 30 ? trimmedText.substring(0, 30) + '...' : trimmedText,
+                startTime: relStart,
+                duration: dur,
+                trimStart: 0,
+                trimEnd: 0,
+              });
+            }
+          });
+
+          textTimelinePos += cd.duration;
+        });
+      }
+
+      // Update tracks with new clips
+      setTracks((prev) => {
+        const videoTrack = prev.find((t) => t.type === 'video');
+        const textTrack = prev.find((t) => t.type === 'text');
+
+        return prev.map((track) => {
+          if (track.id === videoTrack?.id) {
+            return { ...track, clips: [...track.clips, ...newVideoClips] };
+          }
+          if (track.id === textTrack?.id && newTextClips.length > 0) {
+            return {
+              ...track,
+              clips: [...track.clips, ...newTextClips].sort(
+                (a, b) => a.startTime - b.startTime
+              ),
+            };
+          }
+          return track;
+        });
+      });
+
+      // Add text overlays
+      if (newTextOverlays.length > 0) {
+        setTextOverlays((prev) => [...prev, ...newTextOverlays]);
+      }
+
+      // Load source video in preview
+      if (sourceFile.url) {
+        setSelectedMediaUrl(sourceFile.url);
+        setSelectedMediaType('video');
+      }
+
+      console.log(
+        `✅ Loaded ${newVideoClips.length} clip(s) and ${newTextOverlays.length} text overlay(s) from Generate Clips`
+      );
+    } catch (err) {
+      console.error('Failed to load editor clips from sessionStorage:', err);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
+
   const handlePlayPause = () => {
     setIsPlaying(!isPlaying);
   };

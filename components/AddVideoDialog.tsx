@@ -41,14 +41,17 @@ import {
   SmartToy,
   ExpandMore,
 } from '@mui/icons-material';
-import { transcribeAudio } from '../utils/audioTranscription';
-import { OPENAI_API_KEY } from '../lib/config/constants';
+import { transcribeAudio, TranscriptSegment } from '../utils/audioTranscription';
 import { analyzeVideo, getProviderDisplayName, isProviderConfigured } from '@/lib/ai';
+import { useAppDispatch } from '@/store/hooks';
+import { saveProjectFileMetadata, updateProjectFileMetadata } from '@/store/filesSlice';
 
 interface AddVideoDialogProps {
   open: boolean;
   onClose: () => void;
-  onVideoUpload: (
+  projectId: string;
+  userId: string;
+  onVideoUpload?: (
     fileMetadata: {
       name: string;
       size: number;
@@ -88,17 +91,31 @@ const DEFAULT_FEATURES = VIDEO_ANALYSIS_FEATURES
   .filter(f => !f.isFrameHeavy)
   .map(f => f.id);
 
-export default function AddVideoDialog({ open, onClose, onVideoUpload, preSelectedFile }: AddVideoDialogProps) {
+// Format seconds to MM:SS or HH:MM:SS
+function formatTimestamp(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  if (h > 0) {
+    return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  }
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+export default function AddVideoDialog({ open, onClose, projectId, userId, onVideoUpload, preSelectedFile }: AddVideoDialogProps) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const dispatch = useAppDispatch();
   const [step, setStep] = useState<'type' | 'upload' | 'selected' | 'uploading' | 'transcribe' | 'analyze'>('type');
   const [selectedType, setSelectedType] = useState<string>('');
   const [selectedFile, setSelectedFile] = useState<File | null>(preSelectedFile || null);
   const [firebaseUrl, setFirebaseUrl] = useState<string>(''); // Firebase Storage URL
   const [storagePath, setStoragePath] = useState<string>(''); // plain path for Firebase ops
   const [gsPath, setGsPath] = useState<string>(''); // gs:// path for Google Cloud
+  const [savedDocId, setSavedDocId] = useState<string>(''); // Firestore document ID for incremental saves
   const [transcribing, setTranscribing] = useState(false);
   const [transcription, setTranscription] = useState('');
+  const [transcriptionSegments, setTranscriptionSegments] = useState<TranscriptSegment[]>([]);
   const [analyzing, setAnalyzing] = useState(false);
   const [analysis, setAnalysis] = useState<any>(null);
   const [skipAnalysis, setSkipAnalysis] = useState(false);
@@ -127,6 +144,7 @@ export default function AddVideoDialog({ open, onClose, onVideoUpload, preSelect
         }
         setTranscribing(false);
         setTranscription('');
+        setTranscriptionSegments([]);
         setAnalyzing(false);
         setAnalysis(null);
         setSkipAnalysis(false);
@@ -134,6 +152,7 @@ export default function AddVideoDialog({ open, onClose, onVideoUpload, preSelect
         setFirebaseUrl('');
         setStoragePath('');
         setGsPath('');
+        setSavedDocId('');
         setSelectedFeatures(DEFAULT_FEATURES);
       }, 300);
       return () => clearTimeout(timer);
@@ -154,6 +173,7 @@ export default function AddVideoDialog({ open, onClose, onVideoUpload, preSelect
       setFirebaseUrl('');
       setStoragePath('');
       setGsPath('');
+      setSavedDocId('');
       setSelectedFeatures(DEFAULT_FEATURES);
       onClose();
     }
@@ -181,13 +201,6 @@ export default function AddVideoDialog({ open, onClose, onVideoUpload, preSelect
       return;
     }
 
-    // Validate file size (25 MB OpenAI limit)
-    const maxSize = 25 * 1024 * 1024;
-    if (file.size > maxSize) {
-      setError(`File size exceeds 25 MB limit. Current size: ${(file.size / (1024 * 1024)).toFixed(2)} MB`);
-      return;
-    }
-
     setSelectedFile(file);
     setError('');
     // Show selected file, don't upload yet
@@ -211,6 +224,27 @@ export default function AddVideoDialog({ open, onClose, onVideoUpload, preSelect
       setGsPath(result.gsPath);
       setUploading(false);
       
+      // Save initial metadata to database right after upload
+      try {
+        const savedFile = await dispatch(
+          saveProjectFileMetadata({
+            projectId,
+            userId,
+            name: selectedFile.name,
+            type: 'video',
+            size: selectedFile.size,
+            url: result.url,
+            storagePath: result.storagePath,
+            videoType: selectedType,
+          })
+        ).unwrap();
+        setSavedDocId(savedFile.id);
+        console.log('✅ Initial file metadata saved to database:', savedFile.id);
+      } catch (dbErr: any) {
+        console.error('⚠️ Failed to save initial metadata:', dbErr);
+        // Don't block the flow - file is uploaded, metadata save can be retried
+      }
+      
       // Stay on uploading step to show completion message
       // User will click "Continue" to move to transcribe
     } catch (err: any) {
@@ -228,26 +262,51 @@ export default function AddVideoDialog({ open, onClose, onVideoUpload, preSelect
     setTranscribing(true);
 
     try {
-      // Get OpenAI API key from environment or user input
-      const apiKey = OPENAI_API_KEY;
+      // Extract audio from video file on the frontend using FFmpeg WASM
+      // This avoids sending the full video to the backend
+      let audioSource: Blob | File;
       
-      if (!apiKey) {
-        throw new Error('OpenAI API key not configured.');
+      if (selectedFile) {
+        console.log('🎬 Extracting audio from video file in browser...');
+        const { extractAudioFromVideo } = await import('@/lib/audio/extractAudio');
+        audioSource = await extractAudioFromVideo(selectedFile, (progress) => {
+          console.log(`🔧 ${progress.stage}: ${progress.message}`);
+        });
+        console.log(`✅ Audio extracted: ${(audioSource.size / 1024 / 1024).toFixed(2)} MB`);
+      } else {
+        throw new Error('No video file available for audio extraction.');
       }
 
       // Import transcription utility
       const { transcribeAudio } = await import('@/utils/audioTranscription');
 
-      // Use Firebase URL if available (already uploaded), otherwise use file from memory
-      const audioSource = firebaseUrl || selectedFile!;
+      console.log('🎤 Sending extracted audio to transcription API...');
       
-      console.log('🎤 Transcribing audio from:', firebaseUrl ? 'Firebase URL' : 'local file');
-      
-      const result = await transcribeAudio(audioSource, apiKey, {
+      const result = await transcribeAudio(audioSource, {
         timestampGranularity: 'segment',
       });
 
       setTranscription(result.text);
+      setTranscriptionSegments(result.segments || []);
+      
+      // Save transcription to database incrementally (with timestamps)
+      if (savedDocId) {
+        try {
+          await dispatch(
+            updateProjectFileMetadata({
+              fileId: savedDocId,
+              updates: {
+                transcription: result.text,
+                transcriptionSegments: result.segments || [],
+              },
+            })
+          ).unwrap();
+          console.log('✅ Transcription saved to database');
+        } catch (dbErr: any) {
+          console.error('⚠️ Failed to save transcription to database:', dbErr);
+          // Don't block the flow
+        }
+      }
       
       // After transcription, move to analyze step
       setStep('analyze');
@@ -290,6 +349,21 @@ export default function AddVideoDialog({ open, onClose, onVideoUpload, preSelect
 
       setAnalysis(result);
       console.log('✅ AI Analysis complete');
+      
+      // Save AI analysis to database incrementally
+      if (savedDocId) {
+        try {
+          await dispatch(
+            updateProjectFileMetadata({
+              fileId: savedDocId,
+              updates: { aiAnalysis: result },
+            })
+          ).unwrap();
+          console.log('✅ AI analysis saved to database');
+        } catch (dbErr: any) {
+          console.error('⚠️ Failed to save AI analysis to database:', dbErr);
+        }
+      }
     } catch (err: any) {
       console.error('Analysis error:', err);
       setError(err.message || 'Failed to analyze video. You can skip this step.');
@@ -299,7 +373,8 @@ export default function AddVideoDialog({ open, onClose, onVideoUpload, preSelect
   };
 
   const handleUploadVideo = async () => {
-    // Video is already uploaded to Firebase - just save metadata
+    // Video and transcription are already saved incrementally
+    // This final step saves any remaining data (clips, analysis if not saved yet)
     if (!selectedFile || !selectedType || !firebaseUrl || !storagePath) {
       setError('Video not uploaded. Please start over.');
       return;
@@ -309,18 +384,20 @@ export default function AddVideoDialog({ open, onClose, onVideoUpload, preSelect
     setError('');
 
     try {
-      // Notify parent to save metadata (video already in Firebase)
-      await onVideoUpload(
-        {
-          name: selectedFile.name,
-          size: selectedFile.size,
-          url: firebaseUrl,
-          storagePath: storagePath, // plain path for Firebase operations
-        },
-        selectedType,
-        transcription,
-        analysis
-      );
+      // Also notify parent if callback provided (backwards compatibility)
+      if (onVideoUpload) {
+        await onVideoUpload(
+          {
+            name: selectedFile.name,
+            size: selectedFile.size,
+            url: firebaseUrl,
+            storagePath: storagePath,
+          },
+          selectedType,
+          transcription,
+          analysis
+        );
+      }
       
       // Reset state before closing
       setUploading(false);
@@ -330,8 +407,10 @@ export default function AddVideoDialog({ open, onClose, onVideoUpload, preSelect
       setFirebaseUrl('');
       setStoragePath('');
       setGsPath('');
+      setSavedDocId('');
       setTranscribing(false);
       setTranscription('');
+      setTranscriptionSegments([]);
       setAnalyzing(false);
       setAnalysis(null);
       setSkipAnalysis(false);
@@ -460,7 +539,7 @@ export default function AddVideoDialog({ open, onClose, onVideoUpload, preSelect
                   Click to browse or drag video here
                 </Typography>
                 <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
-                  Supported: MP4, MPEG, WebM, MOV (max 25MB for transcription)
+                  Supported: MP4, MPEG, WebM, MOV
                 </Typography>
               </label>
             </CardContent>
@@ -579,7 +658,7 @@ export default function AddVideoDialog({ open, onClose, onVideoUpload, preSelect
                   ✅ Upload Complete!
                 </Typography>
                 <Typography variant="body2">
-                  Your video has been successfully uploaded to Firebase Storage.
+                  Your video has been uploaded to Firebase Storage{savedDocId ? ' and saved to the database' : ''}.
                 </Typography>
               </Alert>
             )}
@@ -675,9 +754,34 @@ export default function AddVideoDialog({ open, onClose, onVideoUpload, preSelect
                   mb: 2,
                 }}
               >
-                <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
-                  {transcription}
-                </Typography>
+                {transcriptionSegments.length > 0 ? (
+                  <Box component="div">
+                    {transcriptionSegments.map((seg, idx) => (
+                      <Box key={idx} sx={{ display: 'flex', gap: 1, mb: 0.5 }}>
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            color: 'primary.main',
+                            fontFamily: 'monospace',
+                            fontWeight: 600,
+                            minWidth: 80,
+                            flexShrink: 0,
+                            pt: 0.25,
+                          }}
+                        >
+                          {formatTimestamp(seg.start)}
+                        </Typography>
+                        <Typography variant="body2">
+                          {seg.text}
+                        </Typography>
+                      </Box>
+                    ))}
+                  </Box>
+                ) : (
+                  <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
+                    {transcription}
+                  </Typography>
+                )}
               </Card>
 
               {uploading && (
@@ -1084,17 +1188,46 @@ export default function AddVideoDialog({ open, onClose, onVideoUpload, preSelect
                           bgcolor: 'background.default',
                         }}
                       >
-                        <Typography 
-                          variant="body2" 
-                          sx={{ 
-                            whiteSpace: 'pre-wrap', 
-                            fontFamily: 'monospace', 
-                            fontSize: '0.75rem',
-                            color: 'text.secondary' 
-                          }}
-                        >
-                          {transcription}
-                        </Typography>
+                        {transcriptionSegments.length > 0 ? (
+                          <Box>
+                            {transcriptionSegments.map((seg, idx) => (
+                              <Box key={idx} sx={{ display: 'flex', gap: 1, mb: 0.5 }}>
+                                <Typography
+                                  variant="caption"
+                                  sx={{
+                                    color: 'primary.main',
+                                    fontFamily: 'monospace',
+                                    fontWeight: 600,
+                                    minWidth: 60,
+                                    flexShrink: 0,
+                                    fontSize: '0.7rem',
+                                    pt: 0.25,
+                                  }}
+                                >
+                                  {formatTimestamp(seg.start)}
+                                </Typography>
+                                <Typography 
+                                  variant="body2" 
+                                  sx={{ fontSize: '0.75rem', color: 'text.secondary' }}
+                                >
+                                  {seg.text}
+                                </Typography>
+                              </Box>
+                            ))}
+                          </Box>
+                        ) : (
+                          <Typography 
+                            variant="body2" 
+                            sx={{ 
+                              whiteSpace: 'pre-wrap', 
+                              fontFamily: 'monospace', 
+                              fontSize: '0.75rem',
+                              color: 'text.secondary' 
+                            }}
+                          >
+                            {transcription}
+                          </Typography>
+                        )}
                       </Card>
                       <Alert severity="info" sx={{ mt: 2 }}>
                         <strong>Note:</strong> AI analysis is based only on this transcript. 
@@ -1125,6 +1258,9 @@ export default function AddVideoDialog({ open, onClose, onVideoUpload, preSelect
 
           {skipAnalysis && (
             <>
+              <Alert severity="success" sx={{ mb: 1 }}>
+                Your video and transcription have already been saved to the database.
+              </Alert>
               <Alert severity="info">
                 Skipping AI analysis. You can analyze the video later from the files page.
               </Alert>
@@ -1145,6 +1281,7 @@ export default function AddVideoDialog({ open, onClose, onVideoUpload, preSelect
         </Box>
       );
     }
+
   };
 
   const renderActions = () => {
@@ -1223,6 +1360,7 @@ export default function AddVideoDialog({ open, onClose, onVideoUpload, preSelect
               setStep('upload');
               setSelectedFile(null);
               setTranscription('');
+              setTranscriptionSegments([]);
             }}
             variant="outlined"
             disabled={transcribing || uploading}
@@ -1253,6 +1391,7 @@ export default function AddVideoDialog({ open, onClose, onVideoUpload, preSelect
             <Button
               onClick={() => {
                 setSkipAnalysis(true);
+                // Video and transcription are already saved - can close directly
               }}
               variant="outlined"
             >
@@ -1285,12 +1424,13 @@ export default function AddVideoDialog({ open, onClose, onVideoUpload, preSelect
                 },
               }}
             >
-              {uploading ? 'Saving...' : 'Finish'}
+              {uploading ? 'Saving...' : (savedDocId ? 'Finish & Close' : 'Finish')}
             </Button>
           )}
         </>
       );
     }
+
   };
 
   return (

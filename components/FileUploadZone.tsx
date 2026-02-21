@@ -23,12 +23,14 @@ import {
   Translate as TranslateIcon,
   Subtitles,
   Visibility,
+  ContentCut,
 } from '@mui/icons-material';
 import { useDropzone } from 'react-dropzone';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import { uploadProjectFile, deleteProjectFile, fetchProjectFiles } from '@/store/filesSlice';
 import TranscriptionModal from './TranscriptionModal';
 import AddVideoDialog from './AddVideoDialog';
+import GenerateClipsDialog from './GenerateClipsDialog';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase/init';
 
@@ -52,6 +54,15 @@ export default function FileUploadZone({ projectId, userId, acceptedTypes = 'all
   const [viewTranscription, setViewTranscription] = useState<{
     fileName: string;
     transcription: string;
+  } | null>(null);
+  const [clipGenerationFile, setClipGenerationFile] = useState<{
+    id: string;
+    name: string;
+    url: string;
+    storagePath: string;
+    transcription?: string;
+    transcriptionSegments?: { text: string; start: number; end: number }[];
+    videoType?: string;
   } | null>(null);
 
   const projectFiles = files.filter((f) => f.projectId === projectId);
@@ -171,14 +182,10 @@ export default function FileUploadZone({ projectId, userId, acceptedTypes = 'all
     }
   };
 
-  const handleVideoUpload = async (file: File, videoType: string, transcription: string, aiAnalysis?: any) => {
-    await uploadFile(file, transcription, videoType);
-    
-    // TODO: Save aiAnalysis to database if provided
-    if (aiAnalysis) {
-      console.log('AI Analysis received:', aiAnalysis);
-      // Will implement saving analysis data in next iteration
-    }
+  const handleVideoUpload = async () => {
+    // Video upload and metadata saving is now handled incrementally by AddVideoDialog
+    // Just refresh files to show the newly saved file
+    dispatch(fetchProjectFiles(projectId));
   };
 
   const getFileIcon = (type: string) => {
@@ -304,6 +311,25 @@ export default function FileUploadZone({ projectId, userId, acceptedTypes = 'all
                             </IconButton>
                           </Tooltip>
                         )}
+                        {file.type === 'video' && file.videoType === 'long-short' && file.transcription && (
+                          <Tooltip title="Generate Clips">
+                            <IconButton
+                              size="small"
+                              color="primary"
+                              onClick={() => setClipGenerationFile({
+                                id: file.id,
+                                name: file.name,
+                                url: file.url,
+                                storagePath: file.storagePath,
+                                transcription: file.transcription,
+                                transcriptionSegments: file.transcriptionSegments as any,
+                                videoType: file.videoType,
+                              })}
+                            >
+                              <ContentCut fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        )}
                         <Tooltip title="Delete">
                           <IconButton
                             size="small"
@@ -340,8 +366,13 @@ export default function FileUploadZone({ projectId, userId, acceptedTypes = 'all
       {/* Video Upload Dialog */}
       <AddVideoDialog
         open={!!selectedVideoForUpload}
-        onClose={() => setSelectedVideoForUpload(null)}
-        onVideoUpload={handleVideoUpload}
+        onClose={() => {
+          setSelectedVideoForUpload(null);
+          // Refresh files when dialog closes to show any saved files
+          dispatch(fetchProjectFiles(projectId));
+        }}
+        projectId={projectId}
+        userId={userId}
         preSelectedFile={selectedVideoForUpload}
       />
 
@@ -373,6 +404,14 @@ export default function FileUploadZone({ projectId, userId, acceptedTypes = 'all
           </Typography>
         </Paper>
       )}
+
+      {/* Generate Clips Dialog */}
+      <GenerateClipsDialog
+        open={!!clipGenerationFile}
+        onClose={() => setClipGenerationFile(null)}
+        file={clipGenerationFile}
+        projectId={projectId}
+      />
     </Box>
   );
 }
