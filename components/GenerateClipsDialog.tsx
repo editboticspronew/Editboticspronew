@@ -29,6 +29,7 @@ import {
   Tooltip,
   Switch,
   FormControlLabel,
+  MenuItem,
 } from '@mui/material';
 import {
   Close,
@@ -46,6 +47,7 @@ import {
   Subtitles,
 } from '@mui/icons-material';
 import VideoPlayer from './VideoPlayer';
+import type { TransitionType } from '@/lib/video/clipVideo';
 
 interface TranscriptSegment {
   text: string;
@@ -151,6 +153,10 @@ export default function GenerateClipsDialog({ open, onClose, file, projectId }: 
   const [merging, setMerging] = useState(false);
   const [mergedVideo, setMergedVideo] = useState<{ blob: Blob; objectUrl: string; fileSize: number } | null>(null);
 
+  // Transition settings
+  const [transitionType, setTransitionType] = useState<TransitionType>('fade');
+  const [transitionDuration, setTransitionDuration] = useState(0.5);
+
   const handleClose = () => {
     if (loading || merging) return;
     // Revoke object URLs to free memory
@@ -223,19 +229,41 @@ export default function GenerateClipsDialog({ open, onClose, file, projectId }: 
         setError('Failed to clip video. Please try again.');
         setProgress('');
       } else {
-        setClips(
-          clipResults.map((r) => ({
-            index: r.index,
-            start: r.start,
-            end: r.end,
-            duration: r.duration,
-            fileSize: r.fileSize,
-            segmentCount: r.segmentCount,
-            transcript: r.transcript,
-            reasons: r.reasons,
-            objectUrl: r.objectUrl,
-          }))
-        );
+        const generatedClips = clipResults.map((r) => ({
+          index: r.index,
+          start: r.start,
+          end: r.end,
+          duration: r.duration,
+          fileSize: r.fileSize,
+          segmentCount: r.segmentCount,
+          transcript: r.transcript,
+          reasons: r.reasons,
+          objectUrl: r.objectUrl,
+        }));
+        setClips(generatedClips);
+
+        // Auto-merge with transitions
+        if (clipResults.length > 1) {
+          setProgress('Merging clips with transitions...');
+          try {
+            const { mergeClips } = await import('@/lib/video/clipVideo');
+            const merged = await mergeClips(
+              clipResults.map((r) => ({ blob: r.blob, index: r.index, duration: r.duration })),
+              (p) => setProgress(p.message),
+              { transition: transitionType, transitionDuration }
+            );
+            setMergedVideo(merged);
+          } catch (err: any) {
+            console.error('Auto-merge failed:', err);
+          }
+        } else if (clipResults.length === 1) {
+          // Single clip — show it as the "merged" result directly
+          setMergedVideo({
+            blob: clipResults[0].blob,
+            objectUrl: clipResults[0].objectUrl,
+            fileSize: clipResults[0].fileSize,
+          });
+        }
         setProgress('');
       }
     } catch (err: any) {
@@ -309,15 +337,18 @@ export default function GenerateClipsDialog({ open, onClose, file, projectId }: 
     try {
       const { mergeClips } = await import('@/lib/video/clipVideo');
 
-      // Get blobs from object URLs
       const clipBlobs = await Promise.all(
         clips.map(async (c) => ({
           blob: await fetch(c.objectUrl).then((r) => r.blob()),
           index: c.index,
+          duration: c.duration,
         }))
       );
 
-      const result = await mergeClips(clipBlobs, (p) => setProgress(p.message));
+      const result = await mergeClips(clipBlobs, (p) => setProgress(p.message), {
+        transition: transitionType,
+        transitionDuration,
+      });
       setMergedVideo(result);
       setProgress('');
     } catch (err: any) {
@@ -518,6 +549,52 @@ export default function GenerateClipsDialog({ open, onClose, file, projectId }: 
                       { value: 5, label: '5s' },
                       { value: 10, label: '10s' },
                     ]}
+                    sx={{ mb: 3 }}
+                  />
+
+                  <Typography variant="caption" fontWeight={600} gutterBottom>
+                    Transition Effect
+                  </Typography>
+                  <TextField
+                    select
+                    fullWidth
+                    size="small"
+                    value={transitionType}
+                    onChange={(e) => setTransitionType(e.target.value as TransitionType)}
+                    sx={{ mb: 3 }}
+                  >
+                    <MenuItem value="fade">Crossfade</MenuItem>
+                    <MenuItem value="fadeblack">Fade Through Black</MenuItem>
+                    <MenuItem value="fadewhite">Fade Through White</MenuItem>
+                    <MenuItem value="dissolve">Dissolve</MenuItem>
+                    <MenuItem value="wipeleft">Wipe Left</MenuItem>
+                    <MenuItem value="wiperight">Wipe Right</MenuItem>
+                    <MenuItem value="slideleft">Slide Left</MenuItem>
+                    <MenuItem value="slideright">Slide Right</MenuItem>
+                    <MenuItem value="circleclose">Circle Close</MenuItem>
+                    <MenuItem value="circleopen">Circle Open</MenuItem>
+                    <MenuItem value="radial">Radial</MenuItem>
+                    <MenuItem value="pixelize">Pixelize</MenuItem>
+                    <MenuItem value="none">None (Direct Join)</MenuItem>
+                  </TextField>
+
+                  <Typography variant="caption" fontWeight={600} gutterBottom>
+                    Transition Duration
+                  </Typography>
+                  <Slider
+                    value={transitionDuration}
+                    onChange={(_, v) => setTransitionDuration(v as number)}
+                    min={0.2}
+                    max={2.0}
+                    step={0.1}
+                    valueLabelDisplay="auto"
+                    valueLabelFormat={(v) => `${v}s`}
+                    marks={[
+                      { value: 0.2, label: '0.2s' },
+                      { value: 1.0, label: '1.0s' },
+                      { value: 2.0, label: '2.0s' },
+                    ]}
+                    disabled={transitionType === 'none'}
                   />
                 </Box>
               </AccordionDetails>
@@ -599,7 +676,67 @@ export default function GenerateClipsDialog({ open, onClose, file, projectId }: 
 
             <Alert severity="success" sx={{ mb: 2 }}>
               Found {clips.length} clip{clips.length > 1 ? 's' : ''} matching &quot;{query}&quot;
+              {mergedVideo && transitionType !== 'none' && clips.length > 1 && (
+                <> &mdash; merged with <strong>{transitionType}</strong> transition</>
+              )}
             </Alert>
+
+            {/* Merged Video — Primary Result */}
+            {mergedVideo && (
+              <Card variant="outlined" sx={{ mb: 3, border: 2, borderColor: 'primary.main' }}>
+                <CardContent>
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <MergeType color="primary" />
+                      <Typography variant="subtitle1" fontWeight={700}>
+                        Final Video
+                      </Typography>
+                    </Box>
+                    <Chip label={formatFileSize(mergedVideo.fileSize)} size="small" color="primary" />
+                  </Box>
+                  <Box sx={{ mb: 2 }}>
+                    <VideoPlayer url={mergedVideo.objectUrl} maxHeight={450} borderRadius={8} />
+                  </Box>
+                  <Button
+                    variant="contained"
+                    fullWidth
+                    startIcon={<Download />}
+                    onClick={handleDownloadMerged}
+                    size="large"
+                    sx={{
+                      background: 'linear-gradient(135deg, #6366f1 0%, #ec4899 100%)',
+                      '&:hover': { background: 'linear-gradient(135deg, #4f46e5 0%, #d946ef 100%)' },
+                    }}
+                  >
+                    Download Video ({formatFileSize(mergedVideo.fileSize)})
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Re-merge prompt when clips have been modified */}
+            {!mergedVideo && clips.length > 1 && (
+              <Alert
+                severity="info"
+                sx={{ mb: 2 }}
+                action={
+                  <Button size="small" variant="contained" onClick={handleMergeClips} startIcon={<MergeType />}>
+                    Re-merge
+                  </Button>
+                }
+              >
+                Clips have been modified. Click &quot;Re-merge&quot; to create an updated video with transitions.
+              </Alert>
+            )}
+
+            {/* Individual Clips */}
+            <Accordion defaultExpanded={!mergedVideo} variant="outlined" sx={{ mb: 2, '&:before': { display: 'none' } }}>
+              <AccordionSummary expandIcon={<ExpandMore />}>
+                <Typography variant="subtitle2" fontWeight={700}>
+                  Individual Clips ({clips.length})
+                </Typography>
+              </AccordionSummary>
+              <AccordionDetails sx={{ p: 1 }}>
 
             {/* Clip Cards */}
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -711,65 +848,19 @@ export default function GenerateClipsDialog({ open, onClose, file, projectId }: 
                 </Card>
               ))}
             </Box>
-
-            {/* Merged Video Preview */}
-            {mergedVideo && (
-              <Card variant="outlined" sx={{ mt: 3, border: 2, borderColor: 'success.main' }}>
-                <CardContent>
-                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <MergeType color="success" />
-                      <Typography variant="subtitle1" fontWeight={700}>
-                        Merged Video
-                      </Typography>
-                    </Box>
-                    <Chip label={formatFileSize(mergedVideo.fileSize)} size="small" color="success" />
-                  </Box>
-                  <Box sx={{ mb: 2 }}>
-                    <VideoPlayer
-                      url={mergedVideo.objectUrl}
-                      maxHeight={400}
-                      borderRadius={8}
-                    />
-                  </Box>
-                  <Button
-                    variant="contained"
-                    color="success"
-                    fullWidth
-                    startIcon={<Download />}
-                    onClick={handleDownloadMerged}
-                    size="large"
-                  >
-                    Download Merged Video
-                  </Button>
-                </CardContent>
-              </Card>
-            )}
+              </AccordionDetails>
+            </Accordion>
 
             {/* Action Buttons Row */}
-            <Box sx={{ mt: 3, display: 'flex', flexWrap: 'wrap', gap: 1.5, justifyContent: 'center' }}>
+            <Box sx={{ mt: 2, display: 'flex', flexWrap: 'wrap', gap: 1.5, justifyContent: 'center' }}>
               <Button
-                variant="contained"
+                variant="outlined"
+                size="small"
                 startIcon={<Download />}
                 onClick={() => clips.forEach(handleDownloadClip)}
-                sx={{
-                  background: 'linear-gradient(135deg, #6366f1 0%, #ec4899 100%)',
-                  '&:hover': { background: 'linear-gradient(135deg, #4f46e5 0%, #d946ef 100%)' },
-                }}
               >
-                Download All Clips
+                Download All Clips Separately
               </Button>
-              {clips.length > 1 && (
-                <Button
-                  variant="contained"
-                  startIcon={<MergeType />}
-                  onClick={handleMergeClips}
-                  disabled={merging}
-                  color="secondary"
-                >
-                  Merge Clips &amp; Download
-                </Button>
-              )}
               <Button
                 variant="contained"
                 startIcon={<OpenInNew />}

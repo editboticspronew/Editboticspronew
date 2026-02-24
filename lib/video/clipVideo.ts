@@ -67,6 +67,23 @@ export interface ClipProgress {
   totalClips?: number;
 }
 
+export type TransitionType =
+  | 'none'
+  | 'fade'
+  | 'fadeblack'
+  | 'fadewhite'
+  | 'dissolve'
+  | 'wipeleft'
+  | 'wiperight'
+  | 'slideleft'
+  | 'slideright'
+  | 'circleclose'
+  | 'circleopen'
+  | 'smoothleft'
+  | 'smoothright'
+  | 'radial'
+  | 'pixelize';
+
 /**
  * Download a video from a URL and clip it in the browser using FFmpeg WASM.
  *
@@ -193,15 +210,22 @@ export async function clipVideo(
 }
 
 /**
- * Merge multiple clip blobs into a single video using FFmpeg WASM concat demuxer.
+ * Merge multiple clip blobs into a single video using FFmpeg WASM.
+ * Supports transition effects between clips using the xfade/acrossfade filters.
+ * Falls back to simple concat (stream copy, no transitions) on failure.
  *
- * @param clips - Array of clip blobs to concatenate (in order)
+ * @param clips - Array of clip blobs to concatenate (in order), with optional duration
  * @param onProgress - Optional progress callback
+ * @param options - Optional transition settings
  * @returns Merged video blob with object URL
  */
 export async function mergeClips(
-  clips: { blob: Blob; index: number }[],
-  onProgress?: (progress: ClipProgress) => void
+  clips: { blob: Blob; index: number; duration?: number }[],
+  onProgress?: (progress: ClipProgress) => void,
+  options?: {
+    transition?: TransitionType;
+    transitionDuration?: number;
+  }
 ): Promise<{ blob: Blob; objectUrl: string; fileSize: number }> {
   if (clips.length === 0) throw new Error('No clips to merge');
 
@@ -214,12 +238,10 @@ export async function mergeClips(
   const ffmpeg = await getFFmpeg();
 
   // Write each clip to virtual FS
-  const fileListLines: string[] = [];
   for (let i = 0; i < clips.length; i++) {
     const name = `merge_clip_${i}.mp4`;
     const data = new Uint8Array(await clips[i].blob.arrayBuffer());
     await ffmpeg.writeFile(name, data);
-    fileListLines.push(`file '${name}'`);
     onProgress?.({
       stage: 'clipping',
       message: `Preparing clip ${i + 1}/${clips.length}...`,
@@ -228,27 +250,109 @@ export async function mergeClips(
     });
   }
 
-  // Write concat list file
-  await ffmpeg.writeFile('merge_list.txt', fileListLines.join('\n'));
+  const transition = options?.transition ?? 'none';
+  const rawTDur = Math.min(options?.transitionDuration ?? 0.5, 2.0);
+  // Clamp transition duration to half the shortest clip to prevent overflows
+  const minDuration = Math.min(...clips.map((c) => c.duration || 5));
+  const tDur = Math.min(rawTDur, minDuration / 2);
 
-  onProgress?.({ stage: 'clipping', message: 'Merging all clips into one video...' });
+  let outputData: Uint8Array | string | null = null;
 
-  await ffmpeg.exec([
-    '-f', 'concat',
-    '-safe', '0',
-    '-i', 'merge_list.txt',
-    '-c', 'copy',
-    '-y',
-    'merged_output.mp4',
-  ]);
+  // --- Attempt merge WITH transitions (requires re-encoding) ---
+  if (transition !== 'none') {
+    onProgress?.({ stage: 'clipping', message: `Merging with ${transition} transition...` });
+    try {
+      const inputArgs: string[] = [];
+      for (let i = 0; i < clips.length; i++) {
+        inputArgs.push('-i', `merge_clip_${i}.mp4`);
+      }
 
-  const outputData = await ffmpeg.readFile('merged_output.mp4');
+      // Build filter_complex: chain xfade for video, acrossfade for audio
+      const vParts: string[] = [];
+      const aParts: string[] = [];
+      let lastV = '0:v';
+      let lastA = '0:a';
 
-  // Clean up
+      for (let i = 1; i < clips.length; i++) {
+        // offset = sum(durations[0..i-1]) - i * transitionDuration
+        const durationSum = clips
+          .slice(0, i)
+          .reduce((sum, c) => sum + (c.duration || 5), 0);
+        const offset = Math.max(0.1, durationSum - i * tDur);
+
+        const isLast = i === clips.length - 1;
+        const vOut = isLast ? 'outv' : `v${i}`;
+        const aOut = isLast ? 'outa' : `a${i}`;
+
+        vParts.push(
+          `[${lastV}][${i}:v]xfade=transition=${transition}:duration=${tDur.toFixed(3)}:offset=${offset.toFixed(3)}[${vOut}]`
+        );
+        aParts.push(
+          `[${lastA}][${i}:a]acrossfade=d=${tDur.toFixed(3)}:c1=tri:c2=tri[${aOut}]`
+        );
+
+        lastV = vOut;
+        lastA = aOut;
+      }
+
+      const filterComplex = [...vParts, ...aParts].join(';');
+      console.log('[FFmpeg Merge] filter_complex:', filterComplex);
+
+      await ffmpeg.exec([
+        ...inputArgs,
+        '-filter_complex', filterComplex,
+        '-map', '[outv]',
+        '-map', '[outa]',
+        '-c:v', 'libx264',
+        '-preset', 'ultrafast',
+        '-crf', '23',
+        '-c:a', 'aac',
+        '-b:a', '128k',
+        '-movflags', '+faststart',
+        '-y',
+        'merged_output.mp4',
+      ]);
+
+      const data = await ffmpeg.readFile('merged_output.mp4');
+      if (typeof data !== 'string' && data.byteLength > 1000) {
+        outputData = data;
+        console.log('✅ Merged with transitions successfully');
+      } else {
+        console.warn('⚠️ Transition merge produced small/invalid output, falling back');
+        await ffmpeg.deleteFile('merged_output.mp4').catch(() => {});
+      }
+    } catch (err: any) {
+      console.warn('⚠️ Transition merge failed, falling back to simple concat:', err.message);
+      await ffmpeg.deleteFile('merged_output.mp4').catch(() => {});
+    }
+  }
+
+  // --- Fallback: simple concat without transitions (fast, stream copy) ---
+  if (!outputData) {
+    onProgress?.({ stage: 'clipping', message: 'Merging clips...' });
+    const fileListLines: string[] = [];
+    for (let i = 0; i < clips.length; i++) {
+      fileListLines.push(`file 'merge_clip_${i}.mp4'`);
+    }
+    await ffmpeg.writeFile('merge_list.txt', fileListLines.join('\n'));
+
+    await ffmpeg.exec([
+      '-f', 'concat',
+      '-safe', '0',
+      '-i', 'merge_list.txt',
+      '-c', 'copy',
+      '-y',
+      'merged_output.mp4',
+    ]);
+
+    outputData = await ffmpeg.readFile('merged_output.mp4');
+    await ffmpeg.deleteFile('merge_list.txt').catch(() => {});
+  }
+
+  // Clean up input files
   for (let i = 0; i < clips.length; i++) {
     await ffmpeg.deleteFile(`merge_clip_${i}.mp4`).catch(() => {});
   }
-  await ffmpeg.deleteFile('merge_list.txt').catch(() => {});
   await ffmpeg.deleteFile('merged_output.mp4').catch(() => {});
 
   if (typeof outputData === 'string') {
