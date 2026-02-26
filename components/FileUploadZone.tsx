@@ -13,10 +13,15 @@ import {
   Chip,
   Tooltip,
   Paper,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  Divider,
 } from '@mui/material';
 import {
   CloudUpload,
   Delete,
+  Close,
   VideoLibrary,
   AudioFile,
   Image as ImageIcon,
@@ -54,6 +59,7 @@ export default function FileUploadZone({ projectId, userId, acceptedTypes = 'all
   const [viewTranscription, setViewTranscription] = useState<{
     fileName: string;
     transcription: string;
+    segments?: { text: string; start: number; end: number }[];
   } | null>(null);
   const [clipGenerationFile, setClipGenerationFile] = useState<{
     id: string;
@@ -63,6 +69,7 @@ export default function FileUploadZone({ projectId, userId, acceptedTypes = 'all
     transcription?: string;
     transcriptionSegments?: { text: string; start: number; end: number }[];
     videoType?: string;
+    visionAnalysis?: any;
   } | null>(null);
 
   const projectFiles = files.filter((f) => f.projectId === projectId);
@@ -166,13 +173,28 @@ export default function FileUploadZone({ projectId, userId, acceptedTypes = 'all
     }
   };
 
-  const handleSaveTranscription = async (fileId: string, transcription: string) => {
+  const handleSaveTranscription = async (
+    fileId: string,
+    transcription: string,
+    segments?: { text: string; start: number; end: number }[]
+  ) => {
     try {
-      // Update file document in Firestore with transcription
-      await updateDoc(doc(db, 'files', fileId), {
+      // Update file document in Firestore with transcription + segments
+      const updateData: Record<string, any> = {
         transcription,
         updatedAt: new Date(),
-      });
+      };
+
+      // Save timestamped segments so we don't have to re-transcribe
+      if (segments && segments.length > 0) {
+        updateData.transcriptionSegments = segments.map((s) => ({
+          text: s.text,
+          start: s.start,
+          end: s.end,
+        }));
+      }
+
+      await updateDoc(doc(db, 'files', fileId), updateData);
       
       // Refresh files
       dispatch(fetchProjectFiles(projectId));
@@ -276,12 +298,17 @@ export default function FileUploadZone({ projectId, userId, acceptedTypes = 'all
                           <Box sx={{ mt: 1 }}>
                             <Chip
                               icon={<Subtitles />}
-                              label="Has Transcription"
+                              label={
+                                file.transcriptionSegments && file.transcriptionSegments.length > 0
+                                  ? `Transcription (${file.transcriptionSegments.length} segments)`
+                                  : 'Transcription (no timestamps)'
+                              }
                               size="small"
-                              color="success"
+                              color={file.transcriptionSegments && file.transcriptionSegments.length > 0 ? 'success' : 'warning'}
                               onClick={() => setViewTranscription({
                                 fileName: file.name,
                                 transcription: file.transcription!,
+                                segments: file.transcriptionSegments as any,
                               })}
                             />
                           </Box>
@@ -297,10 +324,13 @@ export default function FileUploadZone({ projectId, userId, acceptedTypes = 'all
                         )}
                       </Box>
                       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                        {file.type === 'audio' && !file.transcription && (
-                          <Tooltip title="Transcribe">
+                        {(file.type === 'audio' || file.type === 'video') && (
+                          !file.transcription || !(file.transcriptionSegments && file.transcriptionSegments.length > 0)
+                        ) && (
+                          <Tooltip title={file.transcription ? 'Re-transcribe with timestamps' : 'Transcribe'}>
                             <IconButton
                               size="small"
+                              color={file.transcription ? 'warning' : 'default'}
                               onClick={() => setSelectedAudioForTranscription({
                                 id: file.id,
                                 name: file.name,
@@ -324,6 +354,7 @@ export default function FileUploadZone({ projectId, userId, acceptedTypes = 'all
                                 transcription: file.transcription,
                                 transcriptionSegments: file.transcriptionSegments as any,
                                 videoType: file.videoType,
+                                visionAnalysis: file.visionAnalysis,
                               })}
                             >
                               <ContentCut fontSize="small" />
@@ -377,33 +408,68 @@ export default function FileUploadZone({ projectId, userId, acceptedTypes = 'all
       />
 
       {/* View Transcription Dialog */}
-      {viewTranscription && (
-        <Paper
-          sx={{
-            position: 'fixed',
-            top: '50%',
-            left: '50%',
-            transform: 'translate(-50%, -50%)',
-            zIndex: 1300,
-            p: 3,
-            maxWidth: 600,
-            maxHeight: '80vh',
-            overflow: 'auto',
-          }}
-        >
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-            <Typography variant="h6" fontWeight={700}>
-              {viewTranscription.fileName}
-            </Typography>
-            <IconButton onClick={() => setViewTranscription(null)} size="small">
-              <Delete />
-            </IconButton>
-          </Box>
-          <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
-            {viewTranscription.transcription}
-          </Typography>
-        </Paper>
-      )}
+      <Dialog
+        open={!!viewTranscription}
+        onClose={() => setViewTranscription(null)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 2 } }}
+      >
+        {viewTranscription && (
+          <>
+            <DialogTitle sx={{ pb: 1 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Subtitles color="primary" />
+                  <Typography variant="h6" fontWeight={700} noWrap sx={{ maxWidth: 400 }}>
+                    {viewTranscription.fileName}
+                  </Typography>
+                </Box>
+                <IconButton onClick={() => setViewTranscription(null)} size="small">
+                  <Close />
+                </IconButton>
+              </Box>
+              {viewTranscription.segments && viewTranscription.segments.length > 0 && (
+                <Typography variant="caption" color="text.secondary">
+                  {viewTranscription.segments.length} segments with timestamps
+                </Typography>
+              )}
+            </DialogTitle>
+            <Divider />
+            <DialogContent sx={{ pt: 2 }}>
+              {viewTranscription.segments && viewTranscription.segments.length > 0 ? (
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                  {viewTranscription.segments.map((seg, idx) => {
+                    const formatTs = (s: number) => {
+                      const m = Math.floor(s / 60);
+                      const sec = Math.floor(s % 60);
+                      return `${m}:${String(sec).padStart(2, '0')}`;
+                    };
+                    return (
+                      <Box key={idx} sx={{ display: 'flex', gap: 1.5, alignItems: 'flex-start' }}>
+                        <Chip
+                          label={`${formatTs(seg.start)} – ${formatTs(seg.end)}`}
+                          size="small"
+                          variant="outlined"
+                          color="primary"
+                          sx={{ flexShrink: 0, mt: 0.25, fontFamily: 'monospace', fontSize: '0.75rem' }}
+                        />
+                        <Typography variant="body2" color="text.secondary">
+                          {seg.text}
+                        </Typography>
+                      </Box>
+                    );
+                  })}
+                </Box>
+              ) : (
+                <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
+                  {viewTranscription.transcription}
+                </Typography>
+              )}
+            </DialogContent>
+          </>
+        )}
+      </Dialog>
 
       {/* Generate Clips Dialog */}
       <GenerateClipsDialog

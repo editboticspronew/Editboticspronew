@@ -36,6 +36,7 @@ export interface ProjectFile {
   transcriptionSegments?: { text: string; start: number; end: number; words?: { text: string; start: number; end: number }[] }[];
   videoType?: string;
   aiAnalysis?: any; // AI video analysis results
+  visionAnalysis?: any; // Cached vision analysis for clip enrichment
 }
 
 interface FilesState {
@@ -268,6 +269,7 @@ export const updateProjectFileMetadata = createAsyncThunk(
         transcription?: string;
         transcriptionSegments?: { text: string; start: number; end: number; words?: { text: string; start: number; end: number }[] }[];
         aiAnalysis?: any;
+        visionAnalysis?: any;
         videoType?: string;
         generatedClips?: any[];
       };

@@ -48,6 +48,8 @@ import {
 } from '@mui/icons-material';
 import VideoPlayer from './VideoPlayer';
 import type { TransitionType } from '@/lib/video/clipVideo';
+import { useAppDispatch } from '@/store/hooks';
+import { updateProjectFileMetadata } from '@/store/filesSlice';
 
 interface TranscriptSegment {
   text: string;
@@ -79,6 +81,7 @@ interface GenerateClipsDialogProps {
     transcription?: string;
     transcriptionSegments?: TranscriptSegment[];
     videoType?: string;
+    visionAnalysis?: any;
   } | null;
 }
 
@@ -135,6 +138,7 @@ export default function GenerateClipsDialog({ open, onClose, file, projectId }: 
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const router = useRouter();
+  const dispatch = useAppDispatch();
 
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
@@ -157,6 +161,17 @@ export default function GenerateClipsDialog({ open, onClose, file, projectId }: 
   const [transitionType, setTransitionType] = useState<TransitionType>('fade');
   const [transitionDuration, setTransitionDuration] = useState(0.5);
 
+  // Vision analysis settings
+  const [useVisionAnalysis, setUseVisionAnalysis] = useState(false);
+  const [cachedVisionData, setCachedVisionData] = useState<any>(file?.visionAnalysis || null);
+
+  // Sync cached vision data when file prop changes
+  React.useEffect(() => {
+    if (file?.visionAnalysis) {
+      setCachedVisionData(file.visionAnalysis);
+    }
+  }, [file?.visionAnalysis]);
+
   const handleClose = () => {
     if (loading || merging) return;
     // Revoke object URLs to free memory
@@ -172,6 +187,8 @@ export default function GenerateClipsDialog({ open, onClose, file, projectId }: 
     setProgress('');
     setPreviewClipIndex(null);
     setMergedVideo(null);
+    setCachedVisionData(null);
+    setUseVisionAnalysis(false);
     onClose();
   };
 
@@ -186,10 +203,59 @@ export default function GenerateClipsDialog({ open, onClose, file, projectId }: 
     setError('');
     setLoading(true);
     setClips([]);
-    setProgress('Analyzing transcription with AI...');
 
     try {
-      // Step 1: Ask the backend LLM to identify relevant segments
+      // ── Optional Step: Vision Analysis ──
+      let enrichedSegments = undefined;
+
+      if (useVisionAnalysis) {
+        let visionData = cachedVisionData || file.visionAnalysis;
+
+        if (!visionData) {
+          setProgress('Running vision analysis on video... (takes 1-3 min, runs once per video)');
+          const visionResponse = await fetch('/api/analyze-vision', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              storagePath: file.storagePath,
+              videoUrl: file.url,
+            }),
+          });
+
+          const visionResult = await visionResponse.json();
+          if (!visionResponse.ok) {
+            throw new Error(visionResult.error || 'Vision analysis failed');
+          }
+
+          visionData = visionResult;
+
+          // Cache in Firestore so it doesn't run again
+          setCachedVisionData(visionData);
+          dispatch(
+            updateProjectFileMetadata({
+              fileId: file.id,
+              updates: { visionAnalysis: visionData },
+            })
+          );
+        }
+
+        // Enrich and score segments client-side
+        setProgress('Enriching segments with visual analysis...');
+        const { enrichSegments, scoreSegments, prepareSegmentsForLLM } = await import(
+          '@/lib/ai/segmentEnrichment'
+        );
+        const enriched = enrichSegments(file.transcriptionSegments!, visionData);
+        const scored = scoreSegments(enriched, query.trim());
+        enrichedSegments = prepareSegmentsForLLM(scored);
+      }
+
+      // ── Step 1: Ask the backend LLM to identify relevant segments ──
+      setProgress(
+        useVisionAnalysis
+          ? 'Analyzing with AI using transcript + visual signals...'
+          : 'Analyzing transcription with AI...'
+      );
+
       const response = await fetch('/api/generate-clips', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -198,6 +264,7 @@ export default function GenerateClipsDialog({ open, onClose, file, projectId }: 
           query: query.trim(),
           paddingSeconds,
           mergeGapSeconds,
+          enrichedSegments,
         }),
       });
 
@@ -501,6 +568,53 @@ export default function GenerateClipsDialog({ open, onClose, file, projectId }: 
                 ))}
               </Box>
             </Box>
+
+            {/* Vision Analysis Toggle */}
+            {hasSegments && (
+              <Card
+                variant="outlined"
+                sx={{
+                  mb: 2,
+                  p: 1.5,
+                  borderColor: useVisionAnalysis ? 'primary.main' : 'divider',
+                  transition: 'border-color 0.2s',
+                }}
+              >
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={useVisionAnalysis}
+                      onChange={(e) => setUseVisionAnalysis(e.target.checked)}
+                      color="primary"
+                    />
+                  }
+                  label={
+                    <Box>
+                      <Typography variant="body2" fontWeight={600}>
+                        🔍 Vision Analysis
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {cachedVisionData || file?.visionAnalysis
+                          ? '✓ Cached — uses visual signals (labels, objects, faces) for more accurate clips'
+                          : 'Analyzes video visuals for better clip accuracy (1-3 min, runs once per video)'}
+                      </Typography>
+                    </Box>
+                  }
+                  sx={{ m: 0, width: '100%' }}
+                />
+                {useVisionAnalysis && (
+                  <Box sx={{ mt: 1, ml: 4 }}>
+                    <Alert severity="info" variant="outlined" sx={{ py: 0.5 }}>
+                      <Typography variant="caption">
+                        {cachedVisionData || file?.visionAnalysis
+                          ? 'Vision data is cached. No extra wait time — clips will use both transcript and visual context.'
+                          : 'Google Cloud Video Intelligence will analyze scene boundaries, labels, objects, and faces. Results are cached for future use.'}
+                      </Typography>
+                    </Alert>
+                  </Box>
+                )}
+              </Card>
+            )}
 
             {/* Advanced Settings */}
             <Accordion

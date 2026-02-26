@@ -6,6 +6,17 @@ interface TranscriptSegment {
   end: number;
 }
 
+/** Enriched segment with visual analysis data (optional) */
+interface LLMEnrichedSegment {
+  index: number;
+  start: number;
+  end: number;
+  text: string;
+  labels: string;        // top visual labels, comma-separated
+  scores: string;        // "transcript=0.6 visual=0.5 combined=0.55"
+  visualContext: string;  // "talking_head, product_visible"
+}
+
 interface IdentifiedSegment {
   index: number;
   start: number;
@@ -31,10 +42,11 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const {
-      segments,        // Transcription segments with timestamps
-      query: userQuery, // What the user wants to extract
+      segments,           // Transcription segments with timestamps
+      query: userQuery,   // What the user wants to extract
       paddingSeconds = 1.5,
       mergeGapSeconds = 3,
+      enrichedSegments,   // Optional: vision-enriched segments for multimodal selection
     } = body;
 
     // Validate
@@ -62,18 +74,61 @@ export async function POST(request: NextRequest) {
     console.log(`🎬 Generate Clips — LLM Analysis`);
     console.log(`   Query: "${userQuery}"`);
     console.log(`   Segments: ${segments.length}`);
+    console.log(`   Vision enrichment: ${enrichedSegments ? 'YES' : 'NO'}`);
 
     // ──────────────────────────────────────────────
     // Step 1: Use LLM to identify relevant segments
     // ──────────────────────────────────────────────
-    const segmentsForLLM = segments.map((seg: TranscriptSegment, i: number) => ({
-      index: i,
-      start: seg.start,
-      end: seg.end,
-      text: seg.text.trim(),
-    }));
 
-    const llmPrompt = `You are a video editor assistant. Given a list of transcription segments with timestamps, identify which segments are relevant to the user's request.
+    const useMultimodal = Array.isArray(enrichedSegments) && enrichedSegments.length > 0;
+
+    let llmPrompt: string;
+
+    if (useMultimodal) {
+      // ── Enhanced multimodal prompt with vision data ──
+      const enrichedForLLM = (enrichedSegments as LLMEnrichedSegment[]).map((seg) => ({
+        index: seg.index,
+        start: seg.start,
+        end: seg.end,
+        text: seg.text,
+        visualLabels: seg.labels,
+        scores: seg.scores,
+        visualContext: seg.visualContext,
+      }));
+
+      llmPrompt = `You are a video editor assistant with access to BOTH transcript text AND visual analysis data for each segment. Use both signals to identify the most relevant segments.
+
+USER REQUEST: "${userQuery}"
+
+ENRICHED SEGMENTS (transcript + visual analysis):
+${JSON.stringify(enrichedForLLM, null, 2)}
+
+INSTRUCTIONS:
+- Select segments that are relevant to the user's request
+- Use BOTH the transcript text AND visual labels/context to determine relevance
+- A segment is MORE relevant when:
+  • The transcript text mentions the requested topic (high transcript score)
+  • Visual labels match the topic (e.g., "camera" label for a camera review request)
+  • Product is visible (product_visible in visualContext)
+  • A talking head is present when someone is explaining/reviewing (talking_head in visualContext)
+- Prefer segments with HIGH combined scores
+- Include surrounding context segments (intro/outro to the topic)
+- Be inclusive — better to include slightly extra content than cut important parts
+- Return ONLY a JSON array of objects with: index, start, end, text, relevance (brief reason including both text and visual evidence)
+- If no segments match, return an empty array []
+- Return ONLY valid JSON, no markdown or explanation
+
+RESPONSE (JSON array only):`;
+    } else {
+      // ── Standard transcript-only prompt ──
+      const segmentsForLLM = segments.map((seg: TranscriptSegment, i: number) => ({
+        index: i,
+        start: seg.start,
+        end: seg.end,
+        text: seg.text.trim(),
+      }));
+
+      llmPrompt = `You are a video editor assistant. Given a list of transcription segments with timestamps, identify which segments are relevant to the user's request.
 
 USER REQUEST: "${userQuery}"
 
@@ -89,6 +144,7 @@ INSTRUCTIONS:
 - Return ONLY valid JSON, no markdown or explanation
 
 RESPONSE (JSON array only):`;
+    }
 
     const llmResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -101,7 +157,9 @@ RESPONSE (JSON array only):`;
         messages: [
           {
             role: 'system',
-            content: 'You are a precise video editing assistant. You respond ONLY with valid JSON arrays. No markdown, no explanation, just the JSON array.',
+            content: useMultimodal
+              ? 'You are a precise video editing assistant with access to both transcript and visual analysis data. You respond ONLY with valid JSON arrays. No markdown, no explanation, just the JSON array. Use both text content and visual signals (labels, product visibility, talking head presence) to select the most relevant segments.'
+              : 'You are a precise video editing assistant. You respond ONLY with valid JSON arrays. No markdown, no explanation, just the JSON array.',
           },
           { role: 'user', content: llmPrompt },
         ],

@@ -23,7 +23,7 @@ import {
   LinearProgress,
 } from '@mui/material';
 import { Close, Translate as TranslateIcon } from '@mui/icons-material';
-import { transcribeAudio } from '@/utils/audioTranscription';
+import { transcribeAudio, TranscriptSegment } from '@/utils/audioTranscription';
 
 interface TranscriptionModalProps {
   open: boolean;
@@ -34,7 +34,7 @@ interface TranscriptionModalProps {
     url?: string;
     file?: File;
   } | null;
-  onSaveTranscription?: (fileId: string, transcription: string) => Promise<void>;
+  onSaveTranscription?: (fileId: string, transcription: string, segments?: TranscriptSegment[]) => Promise<void>;
   onUploadWithTranscription?: (file: File, transcription: string) => void;
 }
 
@@ -112,11 +112,11 @@ export default function TranscriptionModal({ open, onClose, audioFile, onSaveTra
 
       setTranscription(result.text);
 
-      // Auto-save transcription if callback is provided and file has ID (already uploaded)
+      // Auto-save transcription (text + segments with timestamps) if callback is provided
       if (onSaveTranscription && audioFile.url && audioFile.id) {
         try {
           setSaving(true);
-          await onSaveTranscription(audioFile.id, result.text);
+          await onSaveTranscription(audioFile.id, result.text, result.segments);
         } catch (saveErr: any) {
           console.error('Failed to save transcription:', saveErr);
           // Don't show error since transcription was successful
