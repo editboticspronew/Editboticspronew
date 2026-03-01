@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EditBotics Pro — AI-Powered Video Clip Generation with Multimodal Analysis</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      color: #1a1a2e;
+      background: #ffffff;
+      line-height: 1.7;
+      font-size: 15px;
+      padding: 0;
+    }
+
+    @media print {
+      body { padding: 0; }
+      .page-break { page-break-before: always; }
+      .no-print { display: none; }
+      .header-banner { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      table { page-break-inside: avoid; }
+    }
+
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 0 40px;
+    }
+
+    /* Header */
+    .header-banner {
+      background: linear-gradient(135deg, #6366f1 0%, #ec4899 50%, #8b5cf6 100%);
+      color: white;
+      padding: 60px 40px 50px;
+      margin-bottom: 40px;
+    }
+
+    .header-banner h1 {
+      font-size: 28px;
+      font-weight: 800;
+      line-height: 1.3;
+      margin-bottom: 12px;
+    }
+
+    .header-banner .subtitle {
+      font-size: 16px;
+      opacity: 0.9;
+      font-weight: 400;
+      line-height: 1.6;
+    }
+
+    .header-banner .meta {
+      margin-top: 20px;
+      font-size: 13px;
+      opacity: 0.75;
+    }
+
+    /* Section headers */
+    h2 {
+      font-size: 22px;
+      font-weight: 700;
+      color: #1a1a2e;
+      margin-top: 45px;
+      margin-bottom: 16px;
+      padding-bottom: 8px;
+      border-bottom: 3px solid #6366f1;
+      display: inline-block;
+    }
+
+    h3 {
+      font-size: 17px;
+      font-weight: 600;
+      color: #374151;
+      margin-top: 28px;
+      margin-bottom: 10px;
+    }
+
+    p {
+      margin-bottom: 14px;
+      color: #374151;
+    }
+
+    /* Lists */
+    ul {
+      margin-bottom: 16px;
+      padding-left: 24px;
+    }
+
+    ul li {
+      margin-bottom: 8px;
+      color: #374151;
+    }
+
+    ul li strong {
+      color: #1a1a2e;
+    }
+
+    /* Callout boxes */
+    .callout {
+      background: #f0f0ff;
+      border-left: 4px solid #6366f1;
+      padding: 16px 20px;
+      margin: 20px 0;
+      border-radius: 0 8px 8px 0;
+    }
+
+    .callout p {
+      margin-bottom: 0;
+      font-size: 14px;
+    }
+
+    .callout-warning {
+      background: #fff7ed;
+      border-left-color: #f59e0b;
+    }
+
+    /* Stage cards */
+    .stage-card {
+      background: #fafafa;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      padding: 20px 24px;
+      margin: 16px 0;
+    }
+
+    .stage-card .stage-number {
+      display: inline-block;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      color: white;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 3px 12px;
+      border-radius: 20px;
+      margin-bottom: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .stage-card h4 {
+      font-size: 16px;
+      font-weight: 700;
+      color: #1a1a2e;
+      margin-bottom: 10px;
+    }
+
+    .stage-card p {
+      font-size: 14px;
+      margin-bottom: 10px;
+    }
+
+    .stage-card ul {
+      margin-bottom: 8px;
+    }
+
+    .stage-card ul li {
+      font-size: 14px;
+      margin-bottom: 6px;
+    }
+
+    /* Tables */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 20px 0;
+      font-size: 14px;
+    }
+
+    thead th {
+      background: #6366f1;
+      color: white;
+      padding: 12px 16px;
+      text-align: left;
+      font-weight: 600;
+      font-size: 13px;
+    }
+
+    thead th:first-child {
+      border-radius: 8px 0 0 0;
+    }
+
+    thead th:last-child {
+      border-radius: 0 8px 0 0;
+    }
+
+    tbody td {
+      padding: 12px 16px;
+      border-bottom: 1px solid #e5e7eb;
+      vertical-align: top;
+    }
+
+    tbody tr:nth-child(even) {
+      background: #f9fafb;
+    }
+
+    tbody tr:last-child td:first-child {
+      border-radius: 0 0 0 8px;
+    }
+
+    tbody tr:last-child td:last-child {
+      border-radius: 0 0 8px 0;
+    }
+
+    .tag-miss {
+      display: inline-block;
+      background: #fee2e2;
+      color: #991b1b;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+
+    .tag-hit {
+      display: inline-block;
+      background: #dcfce7;
+      color: #166534;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+
+    /* Scoring breakdown */
+    .score-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+
+    .score-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: #374151;
+      width: 180px;
+      flex-shrink: 0;
+    }
+
+    .score-bar-bg {
+      flex: 1;
+      height: 10px;
+      background: #e5e7eb;
+      border-radius: 5px;
+      overflow: hidden;
+    }
+
+    .score-bar {
+      height: 100%;
+      border-radius: 5px;
+      background: linear-gradient(90deg, #6366f1, #8b5cf6);
+    }
+
+    .score-value {
+      font-size: 13px;
+      font-weight: 700;
+      color: #1a1a2e;
+      width: 40px;
+      text-align: right;
+    }
+
+    /* Principles */
+    .principle {
+      display: flex;
+      gap: 14px;
+      margin-bottom: 16px;
+    }
+
+    .principle-num {
+      flex-shrink: 0;
+      width: 32px;
+      height: 32px;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      color: white;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      font-weight: 700;
+      margin-top: 2px;
+    }
+
+    .principle-text {
+      flex: 1;
+    }
+
+    .principle-text strong {
+      display: block;
+      color: #1a1a2e;
+      margin-bottom: 2px;
+    }
+
+    .principle-text span {
+      font-size: 14px;
+      color: #6b7280;
+    }
+
+    /* Divider */
+    hr {
+      border: none;
+      border-top: 1px solid #e5e7eb;
+      margin: 40px 0;
+    }
+
+    /* Footer */
+    .footer {
+      margin-top: 50px;
+      padding: 24px 0;
+      border-top: 2px solid #e5e7eb;
+      text-align: center;
+      color: #9ca3af;
+      font-size: 13px;
+    }
+
+    /* Print button */
+    .print-btn {
+      position: fixed;
+      bottom: 30px;
+      right: 30px;
+      background: linear-gradient(135deg, #6366f1, #ec4899);
+      color: white;
+      border: none;
+      padding: 14px 28px;
+      border-radius: 50px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      box-shadow: 0 4px 20px rgba(99, 102, 241, 0.4);
+      transition: transform 0.2s, box-shadow 0.2s;
+      z-index: 999;
+      font-family: 'Inter', sans-serif;
+    }
+
+    .print-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 24px rgba(99, 102, 241, 0.5);
+    }
+
+    /* Flow diagram */
+    .flow {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      margin: 24px 0;
+      flex-wrap: wrap;
+    }
+
+    .flow-step {
+      background: #f0f0ff;
+      border: 1px solid #c7d2fe;
+      border-radius: 8px;
+      padding: 8px 16px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #4338ca;
+      text-align: center;
+    }
+
+    .flow-arrow {
+      font-size: 18px;
+      color: #a5b4fc;
+      font-weight: 700;
+    }
+  </style>
+</head>
+<body>
+
+  <button class="print-btn no-print" onclick="window.print()">📄 Save as PDF</button>
+
+  <!-- HEADER -->
+  <div class="header-banner">
+    <div class="container">
+      <h1>EditBotics Pro</h1>
+      <div class="subtitle">AI-Powered Video Clip Generation with Multimodal Analysis</div>
+      <div class="meta">Technical Overview &bull; February 2026</div>
+    </div>
+  </div>
+
+  <div class="container">
+
+    <!-- OVERVIEW -->
+    <h2>Overview</h2>
+    <p>
+      EditBotics Pro is a browser-based video editing platform that can automatically extract relevant clips from long-form videos. A user simply uploads a video, provides a text prompt describing what they want (e.g., "Get the camera review section"), and the system intelligently identifies and cuts the matching segments.
+    </p>
+    <p>
+      What makes this system unique is its <strong>optional vision analysis layer</strong> — a multimodal approach that combines speech transcription with visual scene understanding to dramatically improve clip accuracy.
+    </p>
+
+    <hr />
+
+    <!-- THE PROBLEM -->
+    <h2>The Problem with Transcript-Only Clip Selection</h2>
+
+    <p>Most AI clip generation tools rely solely on speech transcription. They convert audio to text, then ask an AI model which text segments match the user's request.</p>
+    <p>This works reasonably well, but has clear blind spots:</p>
+
+    <ul>
+      <li><strong>Silent content is invisible.</strong> If a reviewer shows sample photos from a phone camera for 20 seconds without speaking, that section has no transcript — and gets skipped entirely.</li>
+      <li><strong>Words without context mislead.</strong> A speaker might say "unlike the camera on my old phone" during a battery discussion. The word "camera" appears, but the visual context is clearly a battery benchmark chart.</li>
+      <li><strong>Visual demonstrations are lost.</strong> Product unboxings, screen demonstrations, and physical comparisons rely heavily on what's being shown, not what's being said.</li>
+    </ul>
+
+    <div class="callout callout-warning">
+      <p><strong>Key Insight:</strong> A video editor making these decisions manually uses both their ears and their eyes. A truly accurate AI clip generator should do the same.</p>
+    </div>
+
+    <hr />
+
+    <!-- THE SOLUTION -->
+    <h2>The Multimodal Solution</h2>
+    <p>EditBotics Pro addresses this by adding an optional <strong>vision analysis layer</strong> that runs alongside the transcript. When enabled, the system doesn't just listen to the video — it watches it too.</p>
+
+    <h3>End-to-End Pipeline</h3>
+
+    <div class="flow">
+      <div class="flow-step">📹 Video Upload</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">🎤 Transcription</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">🔍 Vision Analysis</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">🔗 Enrichment</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">📊 Scoring</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">🤖 AI Selection</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">✂️ FFmpeg Cut</div>
+    </div>
+
+    <!-- Stage 1 -->
+    <div class="stage-card">
+      <div class="stage-number">Stage 1</div>
+      <h4>Vision Analysis — Runs Once Per Video</h4>
+      <p>When a user opts in, the video is sent to Google Cloud Video Intelligence, which extracts four types of visual signals:</p>
+      <ul>
+        <li><strong>Scene boundaries</strong> — Where the video cuts between different shots</li>
+        <li><strong>Content labels</strong> — What categories of content appear at each point in time (e.g., "camera", "photograph", "outdoor", "chart")</li>
+        <li><strong>Object tracking</strong> — What physical objects are visible and when (e.g., a phone is visible from 0:30 to 2:00)</li>
+        <li><strong>Face detection</strong> — When a person's face is on screen (talking head) versus when something else is being shown</li>
+      </ul>
+      <p>Results are <strong>cached permanently</strong> in the database. The user never waits for this again on the same video, even with different queries.</p>
+    </div>
+
+    <!-- Stage 2 -->
+    <div class="stage-card">
+      <div class="stage-number">Stage 2</div>
+      <h4>Segment Enrichment — Instant, Runs Locally</h4>
+      <p>The raw vision data gets aligned with transcript segments by timestamp overlap. For each segment of speech, the system calculates:</p>
+      <ul>
+        <li><strong>Visual labels</strong> — Which content labels were on screen during that segment</li>
+        <li><strong>Talking head score</strong> — What fraction of the segment had a face visible</li>
+        <li><strong>Product presence score</strong> — How many product-related labels were present</li>
+        <li><strong>Motion score</strong> — How many scene changes occurred within the segment</li>
+        <li><strong>Scene ID</strong> — Which visual scene the segment belongs to</li>
+      </ul>
+      <p>This produces an <strong>enriched timeline</strong> where every segment carries both what was said and what was shown.</p>
+    </div>
+
+    <div class="page-break"></div>
+
+    <!-- Stage 3 -->
+    <div class="stage-card">
+      <div class="stage-number">Stage 3</div>
+      <h4>Relevance Scoring — Instant, Runs Locally</h4>
+      <p>Before the AI model sees the data, a heuristic scoring layer computes relevance for each segment. The formula combines four weighted signals:</p>
+
+      <div style="margin-top: 16px;">
+        <div class="score-row">
+          <span class="score-label">Transcript relevance</span>
+          <div class="score-bar-bg"><div class="score-bar" style="width: 50%;"></div></div>
+          <span class="score-value">50%</span>
+        </div>
+        <div class="score-row">
+          <span class="score-label">Visual relevance</span>
+          <div class="score-bar-bg"><div class="score-bar" style="width: 25%;"></div></div>
+          <span class="score-value">25%</span>
+        </div>
+        <div class="score-row">
+          <span class="score-label">Product presence</span>
+          <div class="score-bar-bg"><div class="score-bar" style="width: 15%;"></div></div>
+          <span class="score-value">15%</span>
+        </div>
+        <div class="score-row">
+          <span class="score-label">Talking head context</span>
+          <div class="score-bar-bg"><div class="score-bar" style="width: 10%;"></div></div>
+          <span class="score-value">10%</span>
+        </div>
+      </div>
+
+      <p style="margin-top: 12px;">These weights are <strong>configurable</strong> and can be tuned over time without re-running any analysis.</p>
+    </div>
+
+    <!-- Stage 4 -->
+    <div class="stage-card">
+      <div class="stage-number">Stage 4</div>
+      <h4>AI-Powered Clip Selection</h4>
+      <p>The AI model receives enriched segment summaries — not raw vision data — including text, visual labels, relevance scores, and context flags. It uses both text and visual evidence to make decisions like:</p>
+      <ul>
+        <li>"This segment mentions 'camera' and shows camera-related labels — <strong>include it</strong>."</li>
+        <li>"This segment mentions 'camera' but shows charts and graphs — it's a comparison, <strong>exclude it</strong>."</li>
+        <li>"This segment has no speech, but visual labels show 'photograph' and 'camera' — it's a photo showcase, <strong>include it</strong>."</li>
+      </ul>
+    </div>
+
+    <hr />
+
+    <!-- ACCURACY TABLE -->
+    <h2>Real-World Accuracy Improvements</h2>
+    <p>Consider a 15-minute phone review video where a user asks for "camera review only" clips:</p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Scenario</th>
+          <th>Transcript-Only</th>
+          <th>With Vision Analysis</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Silent photo showcase</strong><br />Reviewer shows samples for 20 seconds</td>
+          <td><span class="tag-miss">Missed</span><br />No speech to analyze</td>
+          <td><span class="tag-hit">Caught</span><br />Labels: camera, photograph, outdoor</td>
+        </tr>
+        <tr>
+          <td><strong>Keyword in wrong context</strong><br />"Better camera than last year" during pricing</td>
+          <td><span class="tag-miss">False positive</span><br />"Camera" keyword matches</td>
+          <td><span class="tag-hit">Excluded</span><br />Labels show chart, price, text</td>
+        </tr>
+        <tr>
+          <td><strong>Photo comparison</strong><br />Side-by-side with minimal narration</td>
+          <td><span class="tag-miss">Partial</span><br />Catches some narrated parts</td>
+          <td><span class="tag-hit">Full capture</span><br />Objects: phone; Labels: photograph</td>
+        </tr>
+        <tr>
+          <td><strong>Talking head intro</strong><br />Reviewer mentions "camera" in overview</td>
+          <td><span class="tag-miss">Included</span><br />Keyword match triggers inclusion</td>
+          <td><span class="tag-hit">Separated</span><br />Face track + generic labels distinguish it</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <hr />
+
+    <!-- ARCHITECTURE PRINCIPLES -->
+    <h2>Architecture Principles</h2>
+
+    <div style="margin-top: 20px;">
+
+      <div class="principle">
+        <div class="principle-num">1</div>
+        <div class="principle-text">
+          <strong>Vision runs once, not per query</strong>
+          <span>The most expensive operation (video analysis) happens a single time per video. Results are cached in the database and reused for every subsequent clip generation request.</span>
+        </div>
+      </div>
+
+      <div class="principle">
+        <div class="principle-num">2</div>
+        <div class="principle-text">
+          <strong>Enrichment is instant and local</strong>
+          <span>Aligning vision data with transcript timestamps and computing relevance scores happens entirely in the user's browser with no server calls. Re-generating clips with a different query adds near-zero overhead.</span>
+        </div>
+      </div>
+
+      <div class="principle">
+        <div class="principle-num">3</div>
+        <div class="principle-text">
+          <strong>Transcript remains the primary signal</strong>
+          <span>Visual analysis is a supporting layer, not a replacement. The system works perfectly well with transcript-only mode — vision analysis is an opt-in enhancement.</span>
+        </div>
+      </div>
+
+      <div class="principle">
+        <div class="principle-num">4</div>
+        <div class="principle-text">
+          <strong>AI never sees raw vision data</strong>
+          <span>Frame-level detection results are aggregated into segment-level summaries. This keeps token usage manageable and prevents the model from being overwhelmed with low-level data.</span>
+        </div>
+      </div>
+
+      <div class="principle">
+        <div class="principle-num">5</div>
+        <div class="principle-text">
+          <strong>Rendering stays in the browser</strong>
+          <span>Video cutting and merging is done client-side using FFmpeg WebAssembly. Only the intelligence layer uses server-side AI, keeping costs low and avoiding extra video uploads.</span>
+        </div>
+      </div>
+
+      <div class="principle">
+        <div class="principle-num">6</div>
+        <div class="principle-text">
+          <strong>Weights are tunable without re-analysis</strong>
+          <span>The scoring formula's weights can be adjusted to improve accuracy over time. If visual signals prove more valuable, weights shift — without re-processing any video.</span>
+        </div>
+      </div>
+
+    </div>
+
+    <hr />
+
+    <!-- SUMMARY -->
+    <h2>Summary</h2>
+    <p>
+      EditBotics Pro's vision analysis layer transforms clip generation from a text-matching exercise into genuine multimodal understanding. By combining what was said with what was shown, the system produces significantly more accurate clips — especially for content-heavy videos like product reviews, tutorials, and demonstrations where visual context is essential.
+    </p>
+    <p>
+      The optional, cached, weighted design ensures this added intelligence comes with minimal performance cost and maximum flexibility for future improvement.
+    </p>
+
+    <div class="callout">
+      <p><strong>Key Takeaway:</strong> Transcript tells you what was said. Vision tells you what was shown. Together, they tell you what actually matters — and that's what makes the clips accurate.</p>
+    </div>
+
+    <!-- FOOTER -->
+    <div class="footer">
+      EditBotics Pro &bull; Multimodal Video Analysis &bull; February 2026
+    </div>
+
+  </div>
+
+</body>
+</html>

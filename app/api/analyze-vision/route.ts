@@ -139,17 +139,27 @@ function processForEnrichment(annotationResults: any) {
 
   // ── Face tracks with time ranges ──
   const faceTracks: { start: number; end: number }[] = [];
+  // Speaker tracks: grouped by detected person (each faceDetectionAnnotation = 1 person)
+  const speakerTracks: { id: number; ranges: { start: number; end: number }[] }[] = [];
+  let speakerId = 0;
+
   for (const annotation of annotationResults.faceDetectionAnnotations ||
     []) {
+    const personRanges: { start: number; end: number }[] = [];
     for (const track of annotation.tracks || []) {
-      faceTracks.push({
+      const range = {
         start: parseTimeOffset(track.segment?.startTimeOffset),
         end: parseTimeOffset(track.segment?.endTimeOffset),
-      });
+      };
+      faceTracks.push(range);
+      personRanges.push(range);
+    }
+    if (personRanges.length > 0) {
+      speakerTracks.push({ id: speakerId++, ranges: personRanges });
     }
   }
 
-  return { scenes, labels, objects, faceTracks };
+  return { scenes, labels, objects, faceTracks, speakerTracks };
 }
 
 // ─── POST handler ──────────────────────────────────────────

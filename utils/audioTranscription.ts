@@ -1,5 +1,7 @@
 /**
- * Audio transcription utilities using OpenAI Whisper API
+ * Audio/video transcription utilities using Google Cloud Video Intelligence API
+ * (SPEECH_TRANSCRIPTION feature). Transcribes directly from video files in
+ * Google Cloud Storage — no audio extraction needed.
  */
 
 export interface TranscriptWord {
@@ -23,36 +25,22 @@ export interface TranscriptionResult {
 }
 
 /**
- * Transcribe audio using OpenAI Whisper API via Next.js API route
+ * Transcribe a video using Google Cloud Video Intelligence via Next.js API route.
+ * Works directly on the video's GCS storage path — no audio extraction needed.
  */
-export async function transcribeAudio(
-  audioFile: File | Blob, // Audio file (extract audio from video on the client before calling this)
+export async function transcribeVideo(
+  storagePath: string,
   options: {
-    language?: string; // e.g., 'en', 'es', 'fr' (auto-detect if not provided)
-    prompt?: string; // Optional context to improve accuracy
-    temperature?: number; // 0-1, lower = more focused
-    timestampGranularity?: 'segment' | 'word'; // Default: segment
+    language?: string; // e.g., 'en', 'es', 'fr' (default: 'en')
   } = {}
 ): Promise<TranscriptionResult> {
-  const formData = new FormData();
-  
-  formData.append('file', audioFile);
-  
-  formData.append('timestampGranularity', options.timestampGranularity || 'segment');
-
-  if (options.language) {
-    formData.append('language', options.language);
-  }
-  if (options.prompt) {
-    formData.append('prompt', options.prompt);
-  }
-  if (options.temperature !== undefined) {
-    formData.append('temperature', String(options.temperature));
-  }
-
   const response = await fetch('/api/transcribe', {
     method: 'POST',
-    body: formData,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      storagePath,
+      language: options.language || 'en',
+    }),
   });
 
   if (!response.ok) {
@@ -71,19 +59,27 @@ export async function transcribeAudio(
 }
 
 /**
- * Validate OpenAI API key
+ * @deprecated Use transcribeVideo() instead. Kept for backward compatibility.
+ * Redirects to the new Google Cloud-based transcription.
  */
-export async function validateOpenAIKey(apiKey: string): Promise<boolean> {
-  try {
-    const response = await fetch('https://api.openai.com/v1/models', {
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-      },
-    });
-    return response.ok;
-  } catch {
-    return false;
+export async function transcribeAudio(
+  _audioFile: File | Blob,
+  options: {
+    language?: string;
+    prompt?: string;
+    temperature?: number;
+    timestampGranularity?: 'segment' | 'word';
+    storagePath?: string; // New: pass storage path to use Google Cloud
+  } = {}
+): Promise<TranscriptionResult> {
+  if (!options.storagePath) {
+    throw new Error(
+      'Transcription now uses Google Cloud Video Intelligence and requires a storagePath. ' +
+      'Audio extraction is no longer needed — pass the video storage path directly.'
+    );
   }
+
+  return transcribeVideo(options.storagePath, { language: options.language });
 }
 
 /**

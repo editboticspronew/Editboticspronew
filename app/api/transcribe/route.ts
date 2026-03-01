@@ -1,126 +1,260 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+/**
+ * POST /api/transcribe
+ *
+ * Transcribes speech from a video using Google Cloud Video Intelligence API
+ * (SPEECH_TRANSCRIPTION feature). Works directly on video files stored in
+ * Google Cloud Storage — no audio extraction needed.
+ *
+ * Accepts JSON: { storagePath, language }
+ */
+
+// ─── Auth ──────────────────────────────────────────────────
+
+async function getGoogleAccessToken(): Promise<string> {
+  const serviceAccountJson = process.env.GOOGLE_CLOUD_SERVICE_ACCOUNT;
+
+  if (!serviceAccountJson) {
+    throw new Error(
+      'GOOGLE_CLOUD_SERVICE_ACCOUNT not configured. Set this environment variable with your service account JSON.'
+    );
+  }
+
+  let serviceAccount;
+  try {
+    serviceAccount = JSON.parse(serviceAccountJson);
+  } catch {
+    throw new Error('Invalid JSON in GOOGLE_CLOUD_SERVICE_ACCOUNT');
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { GoogleAuth } = require('google-auth-library');
+
+  const auth = new GoogleAuth({
+    credentials: serviceAccount,
+    scopes: ['https://www.googleapis.com/auth/cloud-platform'],
+  });
+
+  const client = await auth.getClient();
+  const accessToken = await client.getAccessToken();
+
+  if (!accessToken.token) {
+    throw new Error('Failed to obtain Google Cloud access token');
+  }
+
+  return accessToken.token;
+}
+
+// ─── Helpers ───────────────────────────────────────────────
+
+function parseTimeOffset(timeOffset?: string): number {
+  if (!timeOffset) return 0;
+  return parseFloat(timeOffset.replace('s', ''));
+}
+
+/**
+ * Language code mapping — Google Speech uses BCP-47 codes.
+ */
+function toSpeechLanguageCode(lang: string): string {
+  const mapping: Record<string, string> = {
+    en: 'en-US',
+    es: 'es-ES',
+    fr: 'fr-FR',
+    de: 'de-DE',
+    it: 'it-IT',
+    pt: 'pt-BR',
+    nl: 'nl-NL',
+    ru: 'ru-RU',
+    zh: 'zh-CN',
+    ja: 'ja-JP',
+    ko: 'ko-KR',
+    ar: 'ar-SA',
+    hi: 'hi-IN',
+    tr: 'tr-TR',
+    pl: 'pl-PL',
+    uk: 'uk-UA',
+    vi: 'vi-VN',
+    th: 'th-TH',
+    sv: 'sv-SE',
+    da: 'da-DK',
+    no: 'nb-NO',
+    fi: 'fi-FI',
+  };
+  return mapping[lang] || `${lang}-${lang.toUpperCase()}`;
+}
+
+/**
+ * Process raw speech transcription results into timestamped segments.
+ */
+function processTranscriptionResult(annotationResults: any): {
+  text: string;
+  segments: Array<{ text: string; start: number; end: number }>;
+  language: string;
+  duration: number;
+} {
+  const speechTranscriptions = annotationResults.speechTranscriptions || [];
+
+  const segments: Array<{ text: string; start: number; end: number }> = [];
+  let fullText = '';
+  let maxEnd = 0;
+  let detectedLanguage = '';
+
+  for (const transcription of speechTranscriptions) {
+    // Take the first alternative (highest confidence)
+    const alternative = transcription.alternatives?.[0];
+    if (!alternative || !alternative.transcript) continue;
+
+    const transcript = alternative.transcript.trim();
+    if (!transcript) continue;
+
+    if (alternative.languageCode) {
+      detectedLanguage = alternative.languageCode;
+    }
+
+    // Build segment from word-level timestamps
+    const words = alternative.words || [];
+
+    if (words.length > 0) {
+      const start = parseTimeOffset(words[0].startTime);
+      const end = parseTimeOffset(words[words.length - 1].endTime);
+
+      segments.push({ text: transcript, start, end });
+      maxEnd = Math.max(maxEnd, end);
+    } else {
+      // No word-level timestamps — approximate
+      segments.push({ text: transcript, start: maxEnd, end: maxEnd + 5 });
+      maxEnd += 5;
+    }
+
+    fullText += (fullText ? ' ' : '') + transcript;
+  }
+
+  return { text: fullText, segments, language: detectedLanguage, duration: maxEnd };
+}
+
+// ─── POST handler ──────────────────────────────────────────
+
 export async function POST(request: NextRequest) {
   try {
-    const formData = await request.formData();
-    const file = formData.get('file') as File | null;
-    const language = formData.get('language') as string | null;
-    const prompt = formData.get('prompt') as string | null;
-    const temperature = formData.get('temperature') as string | null;
-    const timestampGranularity = formData.get('timestampGranularity') as string | null;
+    const { storagePath, language = 'en' } = await request.json();
 
-    if (!file) {
+    if (!storagePath) {
       return NextResponse.json(
-        { error: 'Audio file is required. Extract audio from video on the client before sending.' },
+        { error: 'storagePath is required' },
         { status: 400 }
       );
     }
 
-    const apiKey = process.env.OPENAI_API_KEY;
-    
-    console.log('🔑 OpenAI API Key available:', !!apiKey);
-    
-    if (!apiKey) {
-      return NextResponse.json(
-        { error: 'OpenAI API key not configured on server' },
-        { status: 500 }
-      );
-    }
-
-    console.log('🎵 Received audio file:', file.name, `(${(file.size / 1024 / 1024).toFixed(2)} MB)`);
-
-    // Create FormData for OpenAI API
-    const openaiFormData = new FormData();
-    openaiFormData.append('file', file);
-    openaiFormData.append('model', 'whisper-1');
-    openaiFormData.append('response_format', 'verbose_json');
-    openaiFormData.append('timestamp_granularities[]', timestampGranularity || 'segment');
-
-    if (language) {
-      openaiFormData.append('language', language);
-    }
-    if (prompt) {
-      openaiFormData.append('prompt', prompt);
-    }
-    if (temperature) {
-      openaiFormData.append('temperature', temperature);
-    }
-
-    console.log('📤 Sending audio to OpenAI Whisper...');
-
-    // Call OpenAI API with retry logic for 502 errors
-    let response;
-    let attempts = 0;
-    const maxAttempts = 3;
-    
-    while (attempts < maxAttempts) {
-      attempts++;
-      
-      try {
-        response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${apiKey}`,
-          },
-          body: openaiFormData,
-          signal: AbortSignal.timeout(120000), // 120 second timeout
-        });
-
-        console.log(`📥 OpenAI Response status (attempt ${attempts}):`, response.status);
-        
-        // If successful or client error (not server error), break
-        if (response.ok || response.status < 500) {
-          break;
-        }
-        
-        // If 502/503/504, retry
-        if (attempts < maxAttempts) {
-          console.log(`⏳ Retrying in 2 seconds... (attempt ${attempts}/${maxAttempts})`);
-          await new Promise(resolve => setTimeout(resolve, 2000));
-        }
-      } catch (err: any) {
-        console.error(`❌ Fetch error (attempt ${attempts}):`, err.message);
-        if (attempts >= maxAttempts) {
-          throw new Error(`Network error after ${maxAttempts} attempts: ${err.message}`);
-        }
-        await new Promise(resolve => setTimeout(resolve, 2000));
+    // Construct GCS URI from Firebase Storage path
+    let inputUri: string;
+    if (storagePath.startsWith('gs://')) {
+      inputUri = storagePath;
+    } else {
+      const bucket = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
+      if (bucket) {
+        inputUri = `gs://${bucket}/${storagePath}`;
+      } else {
+        return NextResponse.json(
+          { error: 'NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET not configured' },
+          { status: 500 }
+        );
       }
     }
 
-    if (!response) {
-      throw new Error('Failed to get response from OpenAI after retries');
-    }
+    console.log('🎤 Google Cloud Speech Transcription');
+    console.log('📍 Input URI:', inputUri);
+    console.log('🌐 Language:', language);
+
+    const accessToken = await getGoogleAccessToken();
+    const speechLanguageCode = toSpeechLanguageCode(language);
+
+    // Use Video Intelligence SPEECH_TRANSCRIPTION feature
+    // Note: word-level timestamps are returned automatically by
+    // Video Intelligence — no enableWordTimeOffsets flag needed.
+    const requestBody = {
+      inputUri,
+      features: ['SPEECH_TRANSCRIPTION'],
+      videoContext: {
+        speechTranscriptionConfig: {
+          languageCode: speechLanguageCode,
+          enableAutomaticPunctuation: true,
+          maxAlternatives: 1,
+        },
+      },
+    };
+
+    const response = await fetch(
+      'https://videointelligence.googleapis.com/v1/videos:annotate',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      }
+    );
 
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error('❌ OpenAI Error Response:', errorText);
-      
-      let error;
-      try {
-        error = JSON.parse(errorText);
-      } catch {
-        error = { error: errorText };
-      }
-      
+      const error = await response.json();
+      console.error('❌ Google Speech API error:', error);
       return NextResponse.json(
-        { error: error.error?.message || error.error || errorText || 'Transcription failed' },
+        {
+          error: `Google Cloud transcription error: ${
+            error.error?.message || response.statusText
+          }`,
+        },
         { status: response.status }
       );
     }
 
-    const result = await response.json();
+    const operation = await response.json();
+    console.log('🔄 Transcription started:', operation.name);
 
-    return NextResponse.json({
-      text: result.text,
-      segments: result.segments || [],
-      language: result.language,
-      duration: result.duration,
-    });
+    // Poll for completion (max ~10 minutes)
+    let attempts = 0;
+    const maxAttempts = 120;
 
-  } catch (error: any) {
-    console.error('Transcription API error:', error);
+    while (attempts < maxAttempts) {
+      const pollResponse = await fetch(
+        `https://videointelligence.googleapis.com/v1/${operation.name}`,
+        { headers: { Authorization: `Bearer ${accessToken}` } }
+      );
+
+      const pollResult = await pollResponse.json();
+
+      if (pollResult.done) {
+        if (pollResult.error) {
+          console.error('❌ Transcription operation failed:', pollResult.error);
+          throw new Error(`Transcription failed: ${pollResult.error.message}`);
+        }
+
+        console.log('✅ Transcription complete');
+        const annotationResults = pollResult.response.annotationResults[0];
+        const result = processTranscriptionResult(annotationResults);
+
+        console.log('📊 Transcription summary:');
+        console.log('  - Segments:', result.segments.length);
+        console.log('  - Duration:', result.duration.toFixed(1), 'seconds');
+        console.log('  - Language:', result.language);
+
+        return NextResponse.json(result);
+      }
+
+      console.log(`⏳ Transcription polling... attempt ${attempts + 1}/${maxAttempts}`);
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+      attempts++;
+    }
+
     return NextResponse.json(
-      { error: error.message || 'Internal server error' },
+      { error: 'Transcription timed out (10 minutes). Try a shorter video.' },
+      { status: 504 }
+    );
+  } catch (error: any) {
+    console.error('❌ Transcription error:', error);
+    return NextResponse.json(
+      { error: error.message || 'Transcription failed' },
       { status: 500 }
     );
   }

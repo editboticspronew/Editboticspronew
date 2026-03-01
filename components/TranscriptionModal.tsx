@@ -23,7 +23,7 @@ import {
   LinearProgress,
 } from '@mui/material';
 import { Close, Translate as TranslateIcon } from '@mui/icons-material';
-import { transcribeAudio, TranscriptSegment } from '@/utils/audioTranscription';
+import { transcribeVideo, TranscriptSegment } from '@/utils/audioTranscription';
 
 interface TranscriptionModalProps {
   open: boolean;
@@ -33,6 +33,7 @@ interface TranscriptionModalProps {
     name: string;
     url?: string;
     file?: File;
+    storagePath?: string;
   } | null;
   onSaveTranscription?: (fileId: string, transcription: string, segments?: TranscriptSegment[]) => Promise<void>;
   onUploadWithTranscription?: (file: File, transcription: string) => void;
@@ -90,24 +91,19 @@ export default function TranscriptionModal({ open, onClose, audioFile, onSaveTra
     setLoading(true);
 
     try {
-      // Resolve audio source: if URL, fetch as blob; if File, use directly
-      let audioSource: File | Blob;
-      if (audioFile.file) {
-        audioSource = audioFile.file;
-      } else if (audioFile.url) {
-        const response = await fetch(audioFile.url);
-        if (!response.ok) throw new Error('Failed to fetch audio file from URL');
-        audioSource = await response.blob();
-      } else {
-        throw new Error('No audio file or URL provided');
+      // Google Cloud transcription requires a storage path (GCS URI)
+      if (!audioFile.storagePath) {
+        throw new Error(
+          'This file needs to be uploaded to the project first before it can be transcribed. ' +
+          'Google Cloud transcription works directly on stored video files.'
+        );
       }
 
-      console.log('🎤 Transcribing from:', audioFile.url ? 'URL' : 'file');
+      console.log('🎤 Transcribing via Google Cloud:', audioFile.storagePath);
 
-      // Transcribe using OpenAI Whisper
-      const result = await transcribeAudio(audioSource, {
+      // Transcribe using Google Cloud Video Intelligence
+      const result = await transcribeVideo(audioFile.storagePath, {
         language: selectedLanguage,
-        timestampGranularity: 'segment',
       });
 
       setTranscription(result.text);
@@ -216,7 +212,7 @@ export default function TranscriptionModal({ open, onClose, audioFile, onSaveTra
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, py: 2 }}>
               <CircularProgress size={24} />
               <Typography variant="body2" color="text.secondary">
-                Transcribing audio with OpenAI Whisper...
+                Transcribing video with Google Cloud... This may take 1-3 minutes.
               </Typography>
             </Box>
           )}
@@ -275,7 +271,7 @@ export default function TranscriptionModal({ open, onClose, audioFile, onSaveTra
                 Select the target language and click "Transcribe" to generate the transcription.
               </Alert>
               <Alert severity="info" sx={{ mt: 1 }}>
-                <strong>Note:</strong> Audio will be automatically extracted from video files in the browser before transcription.
+                <strong>Note:</strong> Transcription runs via Google Cloud Video Intelligence directly on the video file — no audio extraction needed.
               </Alert>
             </>
           )}

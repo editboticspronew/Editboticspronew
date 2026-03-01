@@ -40,8 +40,11 @@ import {
   CloudUpload,
   SmartToy,
   ExpandMore,
+  AutoFixHigh,
+  Download,
+  PlayArrow,
 } from '@mui/icons-material';
-import { transcribeAudio, TranscriptSegment } from '../utils/audioTranscription';
+import { TranscriptSegment } from '../utils/audioTranscription';
 import { analyzeVideo, getProviderDisplayName, isProviderConfigured } from '@/lib/ai';
 import { useAppDispatch } from '@/store/hooks';
 import { saveProjectFileMetadata, updateProjectFileMetadata } from '@/store/filesSlice';
@@ -125,6 +128,14 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
   // Video analysis features (frame-heavy features unchecked by default)
   const [selectedFeatures, setSelectedFeatures] = useState<string[]>(DEFAULT_FEATURES);
 
+  // Auto-edit state
+  const [autoEditing, setAutoEditing] = useState(false);
+  const [autoEditProgress, setAutoEditProgress] = useState('');
+  const [autoEditClips, setAutoEditClips] = useState<any[]>([]);
+  const [autoEditStats, setAutoEditStats] = useState<any>(null);
+  const [mergedVideo, setMergedVideo] = useState<{ blob: Blob; objectUrl: string; fileSize: number } | null>(null);
+  const [autoEditError, setAutoEditError] = useState('');
+
   // When preSelectedFile is provided, initialize selectedFile
   React.useEffect(() => {
     if (preSelectedFile && !selectedFile) {
@@ -154,13 +165,22 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
         setGsPath('');
         setSavedDocId('');
         setSelectedFeatures(DEFAULT_FEATURES);
+        setAutoEditing(false);
+        setAutoEditProgress('');
+        setAutoEditClips([]);
+        setAutoEditStats(null);
+        setAutoEditError('');
+        if (mergedVideo) {
+          try { URL.revokeObjectURL(mergedVideo.objectUrl); } catch { /* ignore */ }
+        }
+        setMergedVideo(null);
       }, 300);
       return () => clearTimeout(timer);
     }
   }, [open, preSelectedFile]);
 
   const handleClose = () => {
-    if (!transcribing && !uploading && !analyzing) {
+    if (!transcribing && !uploading && !analyzing && !autoEditing) {
       setStep('type');
       setSelectedType('');
       setSelectedFile(null);
@@ -175,6 +195,15 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
       setGsPath('');
       setSavedDocId('');
       setSelectedFeatures(DEFAULT_FEATURES);
+      setAutoEditing(false);
+      setAutoEditProgress('');
+      setAutoEditClips([]);
+      setAutoEditStats(null);
+      setAutoEditError('');
+      if (mergedVideo) {
+        try { URL.revokeObjectURL(mergedVideo.objectUrl); } catch { /* ignore */ }
+      }
+      setMergedVideo(null);
       onClose();
     }
   };
@@ -256,35 +285,22 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
   };
 
   const handleTranscribe = async () => {
-    if (!selectedFile && !firebaseUrl) return;
+    if (!storagePath) {
+      setError('Video must be uploaded before transcription. Please upload first.');
+      return;
+    }
 
     setError('');
     setTranscribing(true);
 
     try {
-      // Extract audio from video file on the frontend using FFmpeg WASM
-      // This avoids sending the full video to the backend
-      let audioSource: Blob | File;
-      
-      if (selectedFile) {
-        console.log('🎬 Extracting audio from video file in browser...');
-        const { extractAudioFromVideo } = await import('@/lib/audio/extractAudio');
-        audioSource = await extractAudioFromVideo(selectedFile, (progress) => {
-          console.log(`🔧 ${progress.stage}: ${progress.message}`);
-        });
-        console.log(`✅ Audio extracted: ${(audioSource.size / 1024 / 1024).toFixed(2)} MB`);
-      } else {
-        throw new Error('No video file available for audio extraction.');
-      }
+      // Use Google Cloud Video Intelligence for transcription
+      // Works directly on the video in GCS — no audio extraction needed
+      const { transcribeVideo } = await import('@/utils/audioTranscription');
 
-      // Import transcription utility
-      const { transcribeAudio } = await import('@/utils/audioTranscription');
-
-      console.log('🎤 Sending extracted audio to transcription API...');
+      console.log('🎤 Transcribing video via Google Cloud:', storagePath);
       
-      const result = await transcribeAudio(audioSource, {
-        timestampGranularity: 'segment',
-      });
+      const result = await transcribeVideo(storagePath);
 
       setTranscription(result.text);
       setTranscriptionSegments(result.segments || []);
@@ -370,6 +386,117 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
     } finally {
       setAnalyzing(false);
     }
+  };
+
+  const handleAutoEdit = async () => {
+    if (!analysis || !firebaseUrl) return;
+
+    setAutoEditing(true);
+    setAutoEditProgress('Generating edit commands with AI...');
+    setAutoEditError('');
+    setAutoEditClips([]);
+    setAutoEditStats(null);
+    if (mergedVideo) {
+      try { URL.revokeObjectURL(mergedVideo.objectUrl); } catch { /* ignore */ }
+    }
+    setMergedVideo(null);
+
+    try {
+      // Step 1: Call auto-edit API to get clip definitions
+      const response = await fetch('/api/auto-edit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          analysis: analysis.analysis,
+          transcriptionSegments,
+          videoType: selectedType,
+          recommendations: analysis.recommendations,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to generate edit commands');
+      }
+
+      if (!data.clips || data.clips.length === 0) {
+        setAutoEditError(data.message || 'AI could not determine edit points. The video may not need editing.');
+        setAutoEditing(false);
+        setAutoEditProgress('');
+        return;
+      }
+
+      setAutoEditClips(data.clips);
+      setAutoEditStats(data.stats);
+      setAutoEditProgress(`Found ${data.clips.length} clip(s). Loading FFmpeg...`);
+
+      // Step 2: Clip the video using FFmpeg WASM
+      const { clipVideo } = await import('@/lib/video/clipVideo');
+      const clipResults = await clipVideo(
+        firebaseUrl,
+        data.clips,
+        (p) => setAutoEditProgress(p.message)
+      );
+
+      if (clipResults.length === 0) {
+        throw new Error('Failed to clip video. Please try again.');
+      }
+
+      // Step 3: Merge all clips into a single final video
+      setAutoEditProgress(`Merging ${clipResults.length} clips into final video...`);
+      const { mergeClips } = await import('@/lib/video/clipVideo');
+      const merged = await mergeClips(
+        clipResults,
+        (p: any) => setAutoEditProgress(p.message),
+        { transition: 'fade', transitionDuration: 0.5 }
+      );
+
+      // Revoke individual clip URLs to free memory
+      clipResults.forEach((clip) => {
+        try { URL.revokeObjectURL(clip.objectUrl); } catch { /* ignore */ }
+      });
+
+      setMergedVideo(merged);
+      setAutoEditProgress('');
+
+      // Save auto-edit metadata to database
+      if (savedDocId) {
+        try {
+          await dispatch(
+            updateProjectFileMetadata({
+              fileId: savedDocId,
+              updates: {
+                autoEdit: {
+                  clips: data.clips,
+                  stats: data.stats,
+                  generatedAt: new Date().toISOString(),
+                },
+              },
+            })
+          ).unwrap();
+          console.log('✅ Auto-edit metadata saved to database');
+        } catch (dbErr: any) {
+          console.error('⚠️ Failed to save auto-edit metadata:', dbErr);
+        }
+      }
+    } catch (err: any) {
+      console.error('Auto-edit error:', err);
+      setAutoEditError(err.message || 'Failed to generate auto-edit. Please try again.');
+      setAutoEditProgress('');
+    } finally {
+      setAutoEditing(false);
+    }
+  };
+
+  const handleDownloadAutoEdit = () => {
+    if (!mergedVideo) return;
+    const a = document.createElement('a');
+    a.href = mergedVideo.objectUrl;
+    a.download = `${selectedFile?.name?.replace(/\.[^.]+$/, '') || 'video'}_auto_edited.mp4`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   };
 
   const handleUploadVideo = async () => {
@@ -546,7 +673,7 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
           </Card>
 
           <Alert severity="info" sx={{ mt: 2 }}>
-            <strong>Note:</strong> Videos will be transcribed using OpenAI Whisper before uploading to ensure accurate metadata.
+            <strong>Note:</strong> Videos will be transcribed using Google Cloud before uploading to ensure accurate metadata.
           </Alert>
         </Box>
       );
@@ -726,7 +853,7 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
                     <CircularProgress size={20} />
                     <Typography variant="body2" color="text.secondary">
-                      Transcribing video with OpenAI Whisper...
+                      Transcribing video with Google Cloud... This may take 1-3 minutes.
                     </Typography>
                   </Box>
                   <LinearProgress />
@@ -1042,7 +1169,7 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
                                 KEY POINTS
                               </Typography>
                               <List dense sx={{ pt: 0 }}>
-                                {analysis.analysis.summary.keyPoints.map((point, i) => (
+                                {analysis.analysis.summary.keyPoints.map((point: string, i: number) => (
                                   <ListItem key={i} sx={{ py: 0.25, px: 0 }}>
                                     <ListItemText 
                                       primary={`${i + 1}. ${point}`}
@@ -1253,6 +1380,210 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
               <Alert severity="success">
                 Video is ready to upload with AI analysis!
               </Alert>
+
+              {/* ── Auto-Edit Section ── */}
+              <Divider sx={{ my: 2 }} />
+              
+              <Card
+                variant="outlined"
+                sx={{
+                  p: 2,
+                  mb: 2,
+                  background: 'linear-gradient(135deg, rgba(99,102,241,0.05) 0%, rgba(236,72,153,0.05) 100%)',
+                  borderColor: mergedVideo ? 'success.main' : 'divider',
+                }}
+              >
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5 }}>
+                  <AutoFixHigh color={mergedVideo ? 'success' : 'primary'} />
+                  <Box>
+                    <Typography variant="subtitle1" fontWeight={700}>
+                      {mergedVideo ? '✅ Auto-Edited Video Ready' : '🎬 Generate Final Video'}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {mergedVideo
+                        ? 'Your AI-edited video is ready for preview and download'
+                        : 'Let AI apply the recommended edits and produce a final video'}
+                    </Typography>
+                  </Box>
+                </Box>
+
+                {/* Auto-edit progress */}
+                {autoEditing && (
+                  <Box sx={{ mb: 2 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
+                      <CircularProgress size={18} />
+                      <Typography variant="body2" color="text.secondary">
+                        {autoEditProgress || 'Processing...'}
+                      </Typography>
+                    </Box>
+                    <LinearProgress />
+                  </Box>
+                )}
+
+                {/* Auto-edit error */}
+                {autoEditError && (
+                  <Alert severity="error" sx={{ mb: 2 }}>
+                    {autoEditError}
+                  </Alert>
+                )}
+
+                {/* Stats */}
+                {autoEditStats && !mergedVideo && !autoEditing && (
+                  <Alert severity="info" sx={{ mb: 2 }}>
+                    AI identified {autoEditStats.clipsCount} segments to keep 
+                    ({autoEditStats.keepPercent}% of original). Processing...
+                  </Alert>
+                )}
+
+                {/* Final merged video */}
+                {mergedVideo && (
+                  <Box sx={{ mb: 2 }}>
+                    {/* Video preview */}
+                    <Box
+                      sx={{
+                        position: 'relative',
+                        width: '100%',
+                        borderRadius: 2,
+                        overflow: 'hidden',
+                        bgcolor: 'black',
+                        mb: 1.5,
+                      }}
+                    >
+                      <video
+                        src={mergedVideo.objectUrl}
+                        controls
+                        style={{ width: '100%', display: 'block', maxHeight: 300 }}
+                      />
+                    </Box>
+
+                    {/* Stats row */}
+                    {autoEditStats && (
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 1.5 }}>
+                        <Chip
+                          size="small"
+                          label={`${autoEditStats.clipsCount} clips`}
+                          color="primary"
+                          variant="outlined"
+                        />
+                        <Chip
+                          size="small"
+                          label={`${autoEditStats.editedDuration?.toFixed(1) || '?'}s edited`}
+                          color="success"
+                          variant="outlined"
+                        />
+                        <Chip
+                          size="small"
+                          label={`${autoEditStats.keepPercent}% kept`}
+                          color="info"
+                          variant="outlined"
+                        />
+                        <Chip
+                          size="small"
+                          label={`${(mergedVideo.fileSize / (1024 * 1024)).toFixed(1)} MB`}
+                          variant="outlined"
+                        />
+                        {autoEditStats.highlightCount > 0 && (
+                          <Chip
+                            size="small"
+                            label={`${autoEditStats.highlightCount} highlights`}
+                            color="warning"
+                            variant="outlined"
+                          />
+                        )}
+                      </Box>
+                    )}
+
+                    {/* Edit clips breakdown */}
+                    {autoEditClips.length > 0 && (
+                      <Accordion sx={{ mb: 1.5 }}>
+                        <AccordionSummary expandIcon={<ExpandMore />}>
+                          <Typography variant="caption" fontWeight={600}>
+                            Edit Breakdown ({autoEditClips.length} segments)
+                          </Typography>
+                        </AccordionSummary>
+                        <AccordionDetails sx={{ maxHeight: 200, overflow: 'auto' }}>
+                          {autoEditClips.map((clip: any, idx: number) => (
+                            <Box
+                              key={idx}
+                              sx={{
+                                display: 'flex',
+                                gap: 1,
+                                mb: 0.75,
+                                alignItems: 'flex-start',
+                              }}
+                            >
+                              <Chip
+                                size="small"
+                                label={`${formatTimestamp(clip.start)}–${formatTimestamp(clip.end)}`}
+                                color={clip.type === 'highlight' ? 'warning' : 'default'}
+                                variant="outlined"
+                                sx={{ flexShrink: 0, fontFamily: 'monospace', fontSize: '0.7rem' }}
+                              />
+                              <Typography variant="caption" color="text.secondary">
+                                {clip.reason}
+                              </Typography>
+                            </Box>
+                          ))}
+                        </AccordionDetails>
+                      </Accordion>
+                    )}
+
+                    {/* Download button */}
+                    <Button
+                      variant="contained"
+                      startIcon={<Download />}
+                      onClick={handleDownloadAutoEdit}
+                      fullWidth
+                      sx={{
+                        background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                        '&:hover': {
+                          background: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
+                        },
+                      }}
+                    >
+                      Download Auto-Edited Video ({(mergedVideo.fileSize / (1024 * 1024)).toFixed(1)} MB)
+                    </Button>
+                  </Box>
+                )}
+
+                {/* Generate button (when no merged video yet) */}
+                {!mergedVideo && !autoEditing && (
+                  <Button
+                    variant="contained"
+                    startIcon={<AutoFixHigh />}
+                    onClick={handleAutoEdit}
+                    fullWidth
+                    disabled={!transcriptionSegments || transcriptionSegments.length === 0}
+                    sx={{
+                      background: 'linear-gradient(135deg, #6366f1 0%, #ec4899 100%)',
+                      '&:hover': {
+                        background: 'linear-gradient(135deg, #4f46e5 0%, #d946ef 100%)',
+                      },
+                    }}
+                  >
+                    Generate Final Video with AI Edits
+                  </Button>
+                )}
+
+                {/* Regenerate button (when merged video exists) */}
+                {mergedVideo && (
+                  <Button
+                    variant="outlined"
+                    startIcon={<AutoFixHigh />}
+                    onClick={handleAutoEdit}
+                    fullWidth
+                    sx={{ mt: 1 }}
+                  >
+                    Regenerate Auto-Edit
+                  </Button>
+                )}
+
+                {!transcriptionSegments || transcriptionSegments.length === 0 ? (
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1, textAlign: 'center' }}>
+                    Transcript with timestamps is required for auto-edit
+                  </Typography>
+                ) : null}
+              </Card>
             </>
           )}
 
@@ -1363,7 +1694,7 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
               setTranscriptionSegments([]);
             }}
             variant="outlined"
-            disabled={transcribing || uploading}
+            disabled={transcribing || uploading || autoEditing}
           >
             Back
           </Button>
@@ -1416,7 +1747,7 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
             <Button
               onClick={handleUploadVideo}
               variant="contained"
-              disabled={uploading}
+              disabled={uploading || autoEditing}
               sx={{
                 background: 'linear-gradient(135deg, #6366f1 0%, #ec4899 100%)',
                 '&:hover': {
@@ -1454,7 +1785,7 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
               Add Video
             </Typography>
           </Box>
-          <IconButton onClick={handleClose} size="small" disabled={transcribing || uploading}>
+          <IconButton onClick={handleClose} size="small" disabled={transcribing || uploading || autoEditing}>
             <Close />
           </IconButton>
         </Box>

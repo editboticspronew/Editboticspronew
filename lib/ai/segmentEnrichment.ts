@@ -38,6 +38,7 @@ export interface VisionAnalysisData {
     timeRange: { start: number; end: number };
   }[];
   faceTracks: { start: number; end: number }[];
+  speakerTracks?: { id: number; ranges: { start: number; end: number }[] }[];
   analyzedAt: string;
 }
 

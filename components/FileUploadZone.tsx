@@ -54,6 +54,7 @@ export default function FileUploadZone({ projectId, userId, acceptedTypes = 'all
     name: string;
     url?: string;
     file?: File;
+    storagePath?: string;
   } | null>(null);
   const [selectedVideoForUpload, setSelectedVideoForUpload] = useState<File | null>(null);
   const [viewTranscription, setViewTranscription] = useState<{
@@ -335,6 +336,7 @@ export default function FileUploadZone({ projectId, userId, acceptedTypes = 'all
                                 id: file.id,
                                 name: file.name,
                                 url: file.url,
+                                storagePath: file.storagePath,
                               })}
                             >
                               <TranslateIcon fontSize="small" />

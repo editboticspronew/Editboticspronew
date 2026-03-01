@@ -272,6 +272,7 @@ export const updateProjectFileMetadata = createAsyncThunk(
         visionAnalysis?: any;
         videoType?: string;
         generatedClips?: any[];
+        autoEdit?: any;
       };
     },
     { rejectWithValue }
