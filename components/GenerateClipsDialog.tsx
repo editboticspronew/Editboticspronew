@@ -29,7 +29,6 @@ import {
   Tooltip,
   Switch,
   FormControlLabel,
-  Checkbox,
   MenuItem,
 } from '@mui/material';
 import {
@@ -89,77 +88,7 @@ interface GenerateClipsDialogProps {
   } | null;
 }
 
-// ─── Accuracy Improvement Features ──────────────────────────
-const ACCURACY_FEATURES = [
-  {
-    id: 'sceneSnap',
-    label: 'Scene-Snap Boundaries',
-    description: 'Snap clip edges to nearest scene change for cleaner cuts',
-    impact: 'High',
-    icon: '🎬',
-    requiresVision: true,
-    available: true,
-  },
-  {
-    id: 'silenceTrimming',
-    label: 'Silence & Filler Trimming',
-    description: 'Remove "um", "uh", long pauses and filler words within clips',
-    impact: 'High',
-    icon: '🔇',
-    available: true,
-  },
-  {
-    id: 'redundancyElimination',
-    label: 'Redundancy Elimination',
-    description: 'Pick only the most concise version when segments repeat the same point',
-    impact: 'High',
-    icon: '🔄',
-    available: true,
-  },
-  {
-    id: 'hookFirstReorder',
-    label: 'Hook-First Reordering',
-    description: 'Start with the most impactful moment — ideal for social media clips',
-    impact: 'Medium',
-    icon: '🪝',
-    available: true,
-  },
-  {
-    id: 'keywordFilter',
-    label: 'Keyword Boost / Exclude',
-    description: 'Must-include & must-exclude keywords as hard constraints for the AI',
-    impact: 'Medium',
-    icon: '🔑',
-    available: true,
-  },
-  {
-    id: 'audioEnergy',
-    label: 'Audio Energy Detection',
-    description: 'Detect applause, laughter, pitch spikes as high-engagement signals',
-    impact: 'Medium',
-    icon: '🔊',
-    available: true,
-  },
-  {
-    id: 'feedbackLoop',
-    label: 'Iterative Feedback Loop',
-    description: 'Thumbs-up/down clips, then regenerate with feedback to the AI',
-    impact: 'Medium',
-    icon: '👍',
-    available: true,
-  },
-  {
-    id: 'speakerFocus',
-    label: 'Speaker Focus Filter',
-    description: 'Focus on a specific speaker using face detection + transcript',
-    impact: 'Low-Medium',
-    icon: '🗣️',
-    available: true,
-    requiresVision: true,
-  },
-];
 
-const DEFAULT_ENABLED_FEATURES = new Set(['sceneSnap', 'silenceTrimming', 'redundancyElimination']);
 
 // Sub-component: clip preview with live subtitle overlay
 function ClipPreviewPlayer({
@@ -226,20 +155,7 @@ export default function GenerateClipsDialog({ open, onClose, file, projectId }: 
   // Duration constraint
   const [durationConstraint, setDurationConstraint] = useState('');
 
-  // Keyword boost / exclude
-  const [mustIncludeKeywords, setMustIncludeKeywords] = useState('');
-  const [excludeKeywords, setExcludeKeywords] = useState('');
 
-  // Accuracy improvement features
-  const [enabledFeatures, setEnabledFeatures] = useState<Set<string>>(new Set(DEFAULT_ENABLED_FEATURES));
-  const toggleFeature = useCallback((featureId: string) => {
-    setEnabledFeatures(prev => {
-      const next = new Set(prev);
-      if (next.has(featureId)) next.delete(featureId);
-      else next.add(featureId);
-      return next;
-    });
-  }, []);
 
   // Advanced settings
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -259,14 +175,8 @@ export default function GenerateClipsDialog({ open, onClose, file, projectId }: 
   const [useVisionAnalysis, setUseVisionAnalysis] = useState(false);
   const [cachedVisionData, setCachedVisionData] = useState<any>(file?.visionAnalysis || null);
 
-  // Audio energy detection (cached per session)
-  const [cachedAudioEnergy, setCachedAudioEnergy] = useState<any>(null);
-
   // Iterative feedback loop
   const [clipFeedback, setClipFeedback] = useState<Map<number, 'liked' | 'disliked'>>(new Map());
-
-  // Speaker focus filter
-  const [focusSpeakerIndex, setFocusSpeakerIndex] = useState<number | null>(null);
 
   // Sync cached vision data when file prop changes
   React.useEffect(() => {
@@ -286,18 +196,13 @@ export default function GenerateClipsDialog({ open, onClose, file, projectId }: 
     }
     setQuery('');
     setDurationConstraint('');
-    setMustIncludeKeywords('');
-    setExcludeKeywords('');
-    setEnabledFeatures(new Set(DEFAULT_ENABLED_FEATURES));
     setError('');
     setClips([]);
     setProgress('');
     setPreviewClipIndex(null);
     setMergedVideo(null);
     setCachedVisionData(null);
-    setCachedAudioEnergy(null);
     setClipFeedback(new Map());
-    setFocusSpeakerIndex(null);
     setUseVisionAnalysis(false);
     onClose();
   };
@@ -364,18 +269,6 @@ export default function GenerateClipsDialog({ open, onClose, file, projectId }: 
         enrichedSegments = prepareSegmentsForLLM(scored);
       }
 
-      // ── Optional Step: Audio Energy Detection ──
-      let audioEnergyPeaks = undefined;
-      if (enabledFeatures.has('audioEnergy')) {
-        let energyProfile = cachedAudioEnergy;
-        if (!energyProfile) {
-          setProgress('Analyzing audio energy levels...');
-          const { analyzeAudioEnergy } = await import('@/lib/audio/audioEnergy');
-          energyProfile = await analyzeAudioEnergy(file.url, (msg) => setProgress(msg));
-          setCachedAudioEnergy(energyProfile);
-        }
-        audioEnergyPeaks = energyProfile.peaks;
-      }
 
       // ── Build feedback payload for iterative regeneration ──
       let clipFeedbackPayload = undefined;
@@ -390,12 +283,6 @@ export default function GenerateClipsDialog({ open, onClose, file, projectId }: 
         };
       }
 
-      // ── Build speaker focus ranges ──
-      const vData = cachedVisionData || file?.visionAnalysis;
-      const speakerFocusRanges =
-        enabledFeatures.has('speakerFocus') && focusSpeakerIndex !== null && vData?.speakerTracks?.[focusSpeakerIndex]
-          ? vData.speakerTracks[focusSpeakerIndex].ranges
-          : undefined;
 
       // ── Step 1: Ask the backend LLM to identify relevant segments ──
       setProgress(
@@ -415,19 +302,11 @@ export default function GenerateClipsDialog({ open, onClose, file, projectId }: 
           mergeGapSeconds,
           enrichedSegments,
           // Pass scene boundaries for snap-to-scene (from cached vision data)
-          scenes: enabledFeatures.has('sceneSnap') && useVisionAnalysis && (cachedVisionData || file?.visionAnalysis)
+          scenes: useVisionAnalysis && (cachedVisionData || file?.visionAnalysis)
             ? (cachedVisionData || file.visionAnalysis).scenes
             : undefined,
-          mustIncludeKeywords: enabledFeatures.has('keywordFilter') && mustIncludeKeywords.trim() ? mustIncludeKeywords.trim() : undefined,
-          excludeKeywords: enabledFeatures.has('keywordFilter') && excludeKeywords.trim() ? excludeKeywords.trim() : undefined,
-          // Accuracy improvement flags
-          silenceTrimming: enabledFeatures.has('silenceTrimming'),
-          redundancyElimination: enabledFeatures.has('redundancyElimination'),
-          hookFirstReorder: enabledFeatures.has('hookFirstReorder'),
-          // New features
-          audioEnergyPeaks,
+          // Feedback loop
           clipFeedback: clipFeedbackPayload,
-          speakerFocusRanges,
         }),
       });
 
@@ -751,133 +630,6 @@ export default function GenerateClipsDialog({ open, onClose, file, projectId }: 
               </Box>
             )}
             {durationConstraint && <Box sx={{ mb: 2 }} />}
-
-            {/* ⚡ Accuracy & Improvement Features */}
-            <Card
-              variant="outlined"
-              sx={{ mb: 2, overflow: 'hidden' }}
-            >
-              <Box sx={{ px: 2, py: 1.5, bgcolor: 'action.hover' }}>
-                <Typography variant="body2" fontWeight={700}>
-                  ⚡ Accuracy & Improvement Features
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  {enabledFeatures.size} feature{enabledFeatures.size !== 1 ? 's' : ''} enabled — toggle to improve clip selection quality
-                </Typography>
-              </Box>
-              <Divider />
-              <Box sx={{ px: 1, py: 0.5 }}>
-                {ACCURACY_FEATURES.map((feature) => {
-                  const isDisabledByVision = feature.requiresVision && !useVisionAnalysis;
-                  const isAvailable = feature.available && !isDisabledByVision;
-                  return (
-                    <Box key={feature.id}>
-                      <FormControlLabel
-                        control={
-                          <Checkbox
-                            checked={enabledFeatures.has(feature.id)}
-                            onChange={() => toggleFeature(feature.id)}
-                            disabled={!isAvailable || !hasSegments}
-                            size="small"
-                          />
-                        }
-                        label={
-                          <Box sx={{ py: 0.5 }}>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap' }}>
-                              <Typography variant="body2" fontWeight={600} sx={{ opacity: isAvailable ? 1 : 0.5 }}>
-                                {feature.icon} {feature.label}
-                              </Typography>
-                              <Chip
-                                label={`${feature.impact} Impact`}
-                                size="small"
-                                color={feature.impact === 'High' ? 'success' : feature.impact === 'Medium' ? 'primary' : 'default'}
-                                variant="outlined"
-                                sx={{ height: 20, fontSize: '0.65rem' }}
-                              />
-                              {!feature.available && (
-                                <Chip
-                                  label="Coming Soon"
-                                  size="small"
-                                  variant="filled"
-                                  sx={{ height: 20, fontSize: '0.65rem', bgcolor: 'action.disabledBackground' }}
-                                />
-                              )}
-                            </Box>
-                            <Typography variant="caption" color="text.secondary" sx={{ opacity: isAvailable ? 1 : 0.5 }}>
-                              {feature.description}
-                              {isDisabledByVision && ' (enable Vision Analysis below)'}
-                            </Typography>
-                          </Box>
-                        }
-                        sx={{ m: 0, width: '100%', alignItems: 'flex-start' }}
-                      />
-                      {/* Keyword fields shown inline when keywordFilter is enabled */}
-                      {feature.id === 'keywordFilter' && enabledFeatures.has('keywordFilter') && (
-                        <Box sx={{ display: 'flex', gap: 1, ml: 4, mb: 1, mt: 0.5 }}>
-                          <TextField
-                            fullWidth
-                            variant="outlined"
-                            size="small"
-                            label="Must Include"
-                            placeholder="e.g., pricing, demo, results"
-                            value={mustIncludeKeywords}
-                            onChange={(e) => setMustIncludeKeywords(e.target.value)}
-                            disabled={!hasSegments}
-                          />
-                          <TextField
-                            fullWidth
-                            variant="outlined"
-                            size="small"
-                            label="Exclude"
-                            placeholder="e.g., sponsors, ads, intro music"
-                            value={excludeKeywords}
-                            onChange={(e) => setExcludeKeywords(e.target.value)}
-                            disabled={!hasSegments}
-                          />
-                        </Box>
-                      )}
-                      {/* Speaker selection dropdown shown inline when speakerFocus is enabled */}
-                      {feature.id === 'speakerFocus' && enabledFeatures.has('speakerFocus') && useVisionAnalysis && (
-                        <Box sx={{ ml: 4, mb: 1, mt: 0.5 }}>
-                          {(() => {
-                            const vd = cachedVisionData || file?.visionAnalysis;
-                            const speakers = vd?.speakerTracks || [];
-                            if (speakers.length === 0) {
-                              return (
-                                <Typography variant="caption" color="text.secondary" sx={{ ml: 0.5 }}>
-                                  {vd ? 'No distinct speakers detected in vision analysis.' : 'Run vision analysis first to detect speakers.'}
-                                </Typography>
-                              );
-                            }
-                            return (
-                              <TextField
-                                select
-                                fullWidth
-                                size="small"
-                                label="Focus on Speaker"
-                                value={focusSpeakerIndex ?? ''}
-                                onChange={(e) => setFocusSpeakerIndex(e.target.value === '' ? null : Number(e.target.value))}
-                                disabled={!hasSegments}
-                              >
-                                <MenuItem value="">All Speakers (no filter)</MenuItem>
-                                {speakers.map((s: any, i: number) => {
-                                  const totalDuration = s.ranges.reduce((sum: number, r: any) => sum + (r.end - r.start), 0);
-                                  return (
-                                    <MenuItem key={i} value={i}>
-                                      Speaker {i + 1} — {s.ranges.length} appearance{s.ranges.length !== 1 ? 's' : ''} ({totalDuration.toFixed(0)}s total)
-                                    </MenuItem>
-                                  );
-                                })}
-                              </TextField>
-                            );
-                          })()}
-                        </Box>
-                      )}
-                    </Box>
-                  );
-                })}
-              </Box>
-            </Card>
 
             {/* Example queries */}
             <Box sx={{ mb: 2 }}>
@@ -1295,9 +1047,8 @@ export default function GenerateClipsDialog({ open, onClose, file, projectId }: 
                     >
                       Download
                     </Button>
-                    {/* Feedback buttons (Iterative Feedback Loop feature) */}
-                    {enabledFeatures.has('feedbackLoop') && (
-                      <Box sx={{ display: 'flex', gap: 0.25, ml: 'auto' }}>
+                    {/* Feedback buttons */}
+                    <Box sx={{ display: 'flex', gap: 0.25, ml: 'auto' }}>
                         <Tooltip title={clipFeedback.get(clip.index) === 'liked' ? 'Remove like' : 'I like this clip'}>
                           <IconButton
                             size="small"
@@ -1327,7 +1078,6 @@ export default function GenerateClipsDialog({ open, onClose, file, projectId }: 
                           </IconButton>
                         </Tooltip>
                       </Box>
-                    )}
                   </CardActions>
                 </Card>
               ))}
@@ -1337,8 +1087,8 @@ export default function GenerateClipsDialog({ open, onClose, file, projectId }: 
 
             {/* Action Buttons Row */}
             <Box sx={{ mt: 2, display: 'flex', flexWrap: 'wrap', gap: 1.5, justifyContent: 'center' }}>
-              {/* Regenerate with Feedback (when feedbackLoop is enabled and user has rated clips) */}
-              {enabledFeatures.has('feedbackLoop') && clipFeedback.size > 0 && (
+              {/* Regenerate with Feedback */}
+              {clipFeedback.size > 0 && (
                 <Button
                   variant="contained"
                   color="secondary"
@@ -1348,7 +1098,7 @@ export default function GenerateClipsDialog({ open, onClose, file, projectId }: 
                   Regenerate with Feedback ({clipFeedback.size} rated)
                 </Button>
               )}
-              {enabledFeatures.has('feedbackLoop') && clipFeedback.size === 0 && (
+              {clipFeedback.size === 0 && (
                 <Alert severity="info" variant="outlined" sx={{ py: 0.25, width: '100%' }}>
                   <Typography variant="caption">
                     👍👎 Rate clips with thumbs up/down, then click Regenerate to improve results with AI feedback

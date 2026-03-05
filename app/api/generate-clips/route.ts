@@ -23,7 +23,8 @@ interface IdentifiedSegment {
   end: number;
   text: string;
   relevance: string;
-  priority?: number;
+  runningTotal?: number; // cumulative duration of all selected segments up to this one
+  priority?: number;     // 1-10 hook priority (lower = better hook)
 }
 
 interface MergedClip {
@@ -66,6 +67,38 @@ function snapToSceneBoundary(
 }
 
 /**
+ * Parse a free-text duration constraint into seconds.
+ * Handles: "30 seconds", "1 minute", "2 min", "1:30", "90s", "under 2 minutes", etc.
+ * Returns null if it can't parse.
+ */
+function parseDurationConstraint(text: string): number | null {
+  if (!text) return null;
+  const lower = text.toLowerCase().trim();
+
+  // Try "X:XX" format (mm:ss)
+  const mmss = lower.match(/(\d+):(\d{1,2})/);
+  if (mmss) return parseInt(mmss[1]) * 60 + parseInt(mmss[2]);
+
+  // Try to extract numbers with unit keywords
+  const minuteMatch = lower.match(/(\d+(?:\.\d+)?)\s*(?:min(?:ute)?s?)/);
+  const secondMatch = lower.match(/(\d+(?:\.\d+)?)\s*(?:sec(?:ond)?s?|s\b)/);
+
+  let total = 0;
+  if (minuteMatch) total += parseFloat(minuteMatch[1]) * 60;
+  if (secondMatch) total += parseFloat(secondMatch[1]);
+  if (total > 0) return total;
+
+  // Bare number — guess: <=10 probably minutes, >10 probably seconds
+  const bareNum = lower.match(/(\d+(?:\.\d+)?)/);
+  if (bareNum) {
+    const n = parseFloat(bareNum[1]);
+    return n <= 10 ? n * 60 : n;
+  }
+
+  return null;
+}
+
+/**
  * POST /api/generate-clips
  *
  * LLM-only: Analyzes transcription segments to find relevant ones,
@@ -85,13 +118,13 @@ export async function POST(request: NextRequest) {
       scenes,             // Optional: scene boundaries for snap-to-scene
       mustIncludeKeywords, // Optional: keywords that MUST appear in selected clips
       excludeKeywords,     // Optional: keywords/topics to EXCLUDE from clips
-      silenceTrimming,     // Optional: trim filler words and silence
-      redundancyElimination = true, // Optional: eliminate redundant segments (default on)
-      hookFirstReorder,    // Optional: reorder clips so most impactful comes first
-      audioEnergyPeaks,    // Optional: high-energy audio moments for engagement
       clipFeedback,        // Optional: previous clips with user feedback for regeneration
-      speakerFocusRanges,  // Optional: time ranges for the focused speaker
     } = body;
+
+    // All optimizations are always ON by default
+    const silenceTrimming = true;
+    const redundancyElimination = true;
+    const hookFirstReorder = true;
 
     // Validate
     if (!segments || !Array.isArray(segments) || segments.length === 0) {
@@ -121,19 +154,32 @@ export async function POST(request: NextRequest) {
     console.log(`   Segments: ${segments.length}`);
     console.log(`   Vision enrichment: ${enrichedSegments ? 'YES' : 'NO'}`);
     console.log(`   Scene-snap: ${scenes?.length ? `YES (${scenes.length} scenes)` : 'NO'}`);
-    console.log(`   Must-include: ${mustIncludeKeywords || 'none'}`);
-    console.log(`   Exclude: ${excludeKeywords || 'none'}`);
-    console.log(`   Silence trimming: ${silenceTrimming ? 'YES' : 'NO'}`);
-    console.log(`   Redundancy elimination: ${redundancyElimination ? 'YES' : 'NO'}`);
-    console.log(`   Hook-first reorder: ${hookFirstReorder ? 'YES' : 'NO'}`);
-    console.log(`   Audio energy: ${Array.isArray(audioEnergyPeaks) && audioEnergyPeaks.length > 0 ? `YES (${audioEnergyPeaks.length} peaks)` : 'NO'}`);
     console.log(`   Feedback loop: ${clipFeedback?.previousClips?.length > 0 ? `YES (${clipFeedback.previousClips.length} clips rated)` : 'NO'}`);
-    console.log(`   Speaker focus: ${Array.isArray(speakerFocusRanges) && speakerFocusRanges.length > 0 ? `YES (${speakerFocusRanges.length} ranges)` : 'NO'}`);
+    console.log(`   Optimizations: silenceTrimming=ON, redundancyElimination=ON, hookFirstReorder=ON`);
 
-    // Build duration instruction if provided
-    const durationInstruction = durationConstraint
-      ? `\n\nDURATION CONSTRAINT: ${durationConstraint}\nIMPORTANT: The user wants the total combined duration of ALL selected clips to fit within this time constraint. Calculate the total duration of your selected segments (sum of end-start for each) and ensure it approximately matches the requested duration. Be selective — pick only the most relevant and impactful segments that fit within the time budget. If you must choose between segments, prefer the ones with the highest relevance to the user's query.`
-      : '';
+    // Parse the user's duration constraint into a target seconds value (if possible)
+    const targetDurationSeconds = durationConstraint ? parseDurationConstraint(durationConstraint) : null;
+
+    // Compute total available content duration so we can tell the LLM
+    const totalAvailableDuration = segments.reduce(
+      (sum: number, s: TranscriptSegment) => sum + (s.end - s.start), 0
+    );
+
+    // Build duration instruction — LLM is fully responsible for fitting the budget
+    let durationInstruction = '';
+    if (durationConstraint && targetDurationSeconds) {
+      durationInstruction = `\n\nDURATION CONSTRAINT: ${targetDurationSeconds} seconds (user said: "${durationConstraint}").`;
+      durationInstruction += `\nTotal available content: ~${totalAvailableDuration.toFixed(0)}s. You must select a subset that totals ≤ ${targetDurationSeconds}s.`;
+      durationInstruction += `\n\nCRITICAL RULES FOR DURATION:`;
+      durationInstruction += `\n1. Each segment has a "dur" field showing its duration in seconds.`;
+      durationInstruction += `\n2. As you pick segments, keep a RUNNING TOTAL of the "dur" values. STOP selecting once your running total approaches ${targetDurationSeconds}s.`;
+      durationInstruction += `\n3. Additionally, consecutive segments will be merged into one continuous clip — any small gaps (1-3s) between them become part of the clip. So picking 3 consecutive segments of 10s each that are back-to-back means ~30s + gaps, not just 30s.`;
+      durationInstruction += `\n4. Return a "runningTotal" field in EACH selected segment showing the cumulative duration sum up to and including that segment.`;
+      durationInstruction += `\n5. The LAST segment's runningTotal MUST be ≤ ${targetDurationSeconds}. If it exceeds the budget, remove segments until it fits.`;
+      durationInstruction += `\n6. Do NOT be greedy — a tight, impactful ${targetDurationSeconds}s selection is better than overshooting.`;
+    } else if (durationConstraint) {
+      durationInstruction = `\n\nDURATION CONSTRAINT: ${durationConstraint}. Select only the most relevant segments that fit this time frame.`;
+    }
 
     // Build keyword boost/exclude instructions
     let keywordInstruction = '';
@@ -144,25 +190,15 @@ export async function POST(request: NextRequest) {
       keywordInstruction += `\n\nEXCLUDE KEYWORDS: ${excludeKeywords.trim()}\nIMPORTANT: Do NOT include segments that are primarily about these topics or keywords. If a segment's main subject matches an excluded keyword, skip it even if it partially overlaps with the user's query.`;
     }
 
-    // Redundancy elimination instruction (togglable)
-    const redundancyInstruction = redundancyElimination
-      ? `\n\nREDUNDANCY ELIMINATION: If multiple segments cover the exact same topic, point, or repeated content, pick only the MOST concise and clear version. Do not include near-duplicate segments that restate the same information.`
-      : '';
+    // Redundancy elimination instruction (always on)
+    const redundancyInstruction = `\n\nREDUNDANCY ELIMINATION: If multiple segments cover the exact same topic, point, or repeated content, pick only the MOST concise and clear version. Do not include near-duplicate segments that restate the same information.`;
 
-    // Silence & filler trimming instruction
-    const silenceInstruction = silenceTrimming
-      ? `\n\nSILENCE & FILLER TRIMMING: Exclude segments that are primarily filler words ("um", "uh", "like", "you know", "so", "basically"), long pauses, or dead air. When a segment contains filler at the start or end, tighten the start/end timestamps to skip the filler portion. Prefer clean, concise segments without verbal hesitations.`
-      : '';
+    // Silence & filler trimming instruction (always on)
+    const silenceInstruction = `\n\nSILENCE & FILLER TRIMMING: Exclude segments that are primarily filler words ("um", "uh", "like", "you know", "so", "basically"), long pauses, or dead air. When a segment contains filler at the start or end, tighten the start/end timestamps to skip the filler portion. Prefer clean, concise segments without verbal hesitations.`;
 
-    // Hook-first reordering instruction
-    const hookInstruction = hookFirstReorder
-      ? `\n\nHOOK-FIRST REORDERING: Also assign each selected segment a "priority" field (integer 1-10, where 1 = most engaging/impactful moment that would make a great hook to grab viewer attention). Consider surprise reveals, emotional peaks, key insights, and provocative statements when scoring.`
-      : '';
+    // Hook-first reordering instruction (always on)
+    const hookInstruction = `\n\nHOOK-FIRST REORDERING: Also assign each selected segment a "priority" field (integer 1-10, where 1 = most engaging/impactful moment that would make a great hook to grab viewer attention). Consider surprise reveals, emotional peaks, key insights, and provocative statements when scoring.`;
 
-    // Audio energy detection instruction
-    const audioEnergyInstruction = Array.isArray(audioEnergyPeaks) && audioEnergyPeaks.length > 0
-      ? `\n\nAUDIO ENERGY PEAKS: High-energy audio moments detected at: ${audioEnergyPeaks.map((p: any) => `${p.time.toFixed(1)}s (level: ${(p.level * 100).toFixed(0)}%, ${p.type})`).join(', ')}\nPREFER segments that overlap with or are near these high-energy moments. Audio energy peaks often correspond to applause, laughter, excitement, emphasis, or audience reactions — these are typically the most engaging parts of the video. Give a significant relevance boost to segments within 5 seconds of a detected peak.`
-      : '';
 
     // Iterative feedback loop instruction
     let feedbackInstruction = '';
@@ -179,11 +215,6 @@ export async function POST(request: NextRequest) {
       feedbackInstruction += `\n\nIMPORTANT: Keep content similar to liked clips. Replace disliked clips with better alternatives from different parts of the video. Do NOT reselect the same disliked segments.`;
     }
 
-    // Speaker focus filter instruction
-    const speakerFocusInstruction = Array.isArray(speakerFocusRanges) && speakerFocusRanges.length > 0
-      ? `\n\nSPEAKER FOCUS: The user wants to focus on a specific speaker who appears during these time ranges: ${speakerFocusRanges.map((r: any) => `${r.start.toFixed(1)}s–${r.end.toFixed(1)}s`).join(', ')}\nSTRONGLY PREFER segments that overlap with these time ranges — they contain the speaker the user is interested in. Deprioritise segments outside these ranges unless they provide critical context.`
-      : '';
-
     // ──────────────────────────────────────────────
     // Step 1: Use LLM to identify relevant segments
     // ──────────────────────────────────────────────
@@ -198,6 +229,7 @@ export async function POST(request: NextRequest) {
         index: seg.index,
         start: seg.start,
         end: seg.end,
+        dur: +(seg.end - seg.start).toFixed(1),
         text: seg.text,
         visualLabels: seg.labels,
         scores: seg.scores,
@@ -206,13 +238,13 @@ export async function POST(request: NextRequest) {
 
       llmPrompt = `You are a video editor assistant with access to BOTH transcript text AND visual analysis data for each segment. Use both signals to identify the most relevant segments.
 
-USER REQUEST: "${userQuery}"${durationInstruction}${keywordInstruction}${redundancyInstruction}${silenceInstruction}${hookInstruction}${audioEnergyInstruction}${feedbackInstruction}${speakerFocusInstruction}
+USER REQUEST: "${userQuery}"${durationInstruction}${keywordInstruction}${redundancyInstruction}${silenceInstruction}${hookInstruction}${feedbackInstruction}
 
 ENRICHED SEGMENTS (transcript + visual analysis):
 ${JSON.stringify(enrichedForLLM, null, 2)}
 
 INSTRUCTIONS:
-- Select segments that are relevant to the user's request
+- Select segments that are most relevant to the user's request
 - Use BOTH the transcript text AND visual labels/context to determine relevance
 - A segment is MORE relevant when:
   • The transcript text mentions the requested topic (high transcript score)
@@ -221,8 +253,8 @@ INSTRUCTIONS:
   • A talking head is present when someone is explaining/reviewing (talking_head in visualContext)
 - Prefer segments with HIGH combined scores
 - Include surrounding context segments (intro/outro to the topic)
-- Be inclusive — better to include slightly extra content than cut important parts
-- Return ONLY a JSON array of objects with: index, start, end, text, relevance (brief reason including both text and visual evidence)
+- Be selective — only include segments that are clearly relevant and fit within the duration budget
+- Return ONLY a JSON array of objects with: index, start, end, text, relevance (brief reason)${targetDurationSeconds ? ', runningTotal (cumulative sum of dur values of all selected segments up to and including this one)' : ''}
 - If no segments match, return an empty array []
 - Return ONLY valid JSON, no markdown or explanation
 
@@ -233,21 +265,22 @@ RESPONSE (JSON array only):`;
         index: i,
         start: seg.start,
         end: seg.end,
+        dur: +(seg.end - seg.start).toFixed(1),
         text: seg.text.trim(),
       }));
 
       llmPrompt = `You are a video editor assistant. Given a list of transcription segments with timestamps, identify which segments are relevant to the user's request.
 
-USER REQUEST: "${userQuery}"${durationInstruction}${keywordInstruction}${redundancyInstruction}${silenceInstruction}${hookInstruction}${audioEnergyInstruction}${feedbackInstruction}${speakerFocusInstruction}
+USER REQUEST: "${userQuery}"${durationInstruction}${keywordInstruction}${redundancyInstruction}${silenceInstruction}${hookInstruction}${feedbackInstruction}
 
 TRANSCRIPTION SEGMENTS:
 ${JSON.stringify(segmentsForLLM, null, 2)}
 
 INSTRUCTIONS:
-- Select segments that are relevant to the user's request
+- Select segments that are most relevant to the user's request
 - Include segments that provide context (intro/outro to the topic)
-- Be inclusive rather than exclusive — it's better to include slightly extra content than to cut important parts
-- Return ONLY a JSON array of objects with: index, start, end, text, relevance (brief reason why this segment is relevant)
+- Be selective — only include segments that are clearly relevant and fit within the duration budget
+- Return ONLY a JSON array of objects with: index, start, end, text, relevance (brief reason)${targetDurationSeconds ? ', runningTotal (cumulative sum of dur values of all selected segments up to and including this one)' : ''}
 - If no segments match, return an empty array []
 - Return ONLY valid JSON, no markdown or explanation
 
@@ -258,74 +291,138 @@ RESPONSE (JSON array only):`;
     console.log(llmPrompt);
     console.log(`📝 ── End of Prompt ──\n`);
 
-    const llmResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [
-          {
-            role: 'system',
-            content: useMultimodal
-              ? 'You are a precise video editing assistant with access to both transcript and visual analysis data. You respond ONLY with valid JSON arrays. No markdown, no explanation, just the JSON array. Use both text content and visual signals (labels, product visibility, talking head presence) to select the most relevant segments.'
-              : 'You are a precise video editing assistant. You respond ONLY with valid JSON arrays. No markdown, no explanation, just the JSON array.',
-          },
-          { role: 'user', content: llmPrompt },
-        ],
-        temperature: 0.3,
-        max_tokens: 4000,
-      }),
-    });
+    // ──────────────────────────────────────────────
+    // LLM call with duration retry logic
+    // If LLM overshoots the duration budget, we send
+    // its response back and ask it to trim down.
+    // Max 2 retries (3 total attempts).
+    // ──────────────────────────────────────────────
 
-    if (!llmResponse.ok) {
-      const errText = await llmResponse.text();
-      console.error('❌ LLM API error:', errText);
-      return NextResponse.json(
-        { error: 'Failed to analyze segments with AI' },
-        { status: 500 }
+    const systemMessage = useMultimodal
+      ? 'You are a precise video editing assistant with access to both transcript and visual analysis data. You MUST stay within the duration budget — track a running total of segment durations and stop once you reach the limit. You respond ONLY with valid JSON arrays. No markdown, no explanation, just the JSON array.'
+      : 'You are a precise video editing assistant. You MUST stay within the duration budget — track a running total of segment durations and stop once you reach the limit. You respond ONLY with valid JSON arrays. No markdown, no explanation, just the JSON array.';
+
+    const MAX_DURATION_RETRIES = 2;
+    let identifiedSegments: IdentifiedSegment[] = [];
+    let conversationMessages: Array<{ role: string; content: string }> = [
+      { role: 'system', content: systemMessage },
+      { role: 'user', content: llmPrompt },
+    ];
+
+    for (let attempt = 0; attempt <= MAX_DURATION_RETRIES; attempt++) {
+      const isRetry = attempt > 0;
+      console.log(isRetry
+        ? `\n🔄 Duration retry ${attempt}/${MAX_DURATION_RETRIES}...`
+        : `\n🤖 Calling LLM (attempt 1)...`
       );
-    }
 
-    const llmResult = await llmResponse.json();
-    const llmContent = llmResult.choices?.[0]?.message?.content?.trim() || '[]';
-
-    let identifiedSegments: IdentifiedSegment[];
-    try {
-      const cleaned = llmContent
-        .replace(/```json?\n?/g, '')
-        .replace(/```\n?/g, '')
-        .trim();
-      identifiedSegments = JSON.parse(cleaned);
-    } catch {
-      console.error('❌ Failed to parse LLM response:', llmContent);
-      return NextResponse.json(
-        { error: 'AI returned invalid response. Please try again.' },
-        { status: 500 }
-      );
-    }
-
-    if (!Array.isArray(identifiedSegments) || identifiedSegments.length === 0) {
-      return NextResponse.json({
-        success: true,
-        clips: [],
-        message: 'No segments matched your query. Try a broader description.',
+      const llmResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages: conversationMessages,
+          temperature: isRetry ? 0.2 : 0.3, // Lower temperature on retry for stricter compliance
+          max_tokens: 4000,
+        }),
       });
+
+      if (!llmResponse.ok) {
+        const errText = await llmResponse.text();
+        console.error('❌ LLM API error:', errText);
+        return NextResponse.json(
+          { error: 'Failed to analyze segments with AI' },
+          { status: 500 }
+        );
+      }
+
+      const llmResult = await llmResponse.json();
+      const llmContent = llmResult.choices?.[0]?.message?.content?.trim() || '[]';
+
+      try {
+        const cleaned = llmContent
+          .replace(/```json?\n?/g, '')
+          .replace(/```\n?/g, '')
+          .trim();
+        identifiedSegments = JSON.parse(cleaned);
+      } catch {
+        console.error('❌ Failed to parse LLM response:', llmContent);
+        if (isRetry) break; // Don't fail on retry parse errors, use previous result
+        return NextResponse.json(
+          { error: 'AI returned invalid response. Please try again.' },
+          { status: 500 }
+        );
+      }
+
+      if (!Array.isArray(identifiedSegments) || identifiedSegments.length === 0) {
+        return NextResponse.json({
+          success: true,
+          clips: [],
+          message: 'No segments matched your query. Try a broader description.',
+        });
+      }
+
+      // Log the LLM selection
+      const llmTotalDuration = identifiedSegments.reduce((sum, s) => sum + (s.end - s.start), 0);
+      console.log(`\n📋 ── LLM Selected Segments — Attempt ${attempt + 1} (${identifiedSegments.length} segments, ${llmTotalDuration.toFixed(1)}s raw content${targetDurationSeconds ? ` / ${targetDurationSeconds}s target` : ''}) ──`);
+      for (const seg of identifiedSegments) {
+        const dur = (seg.end - seg.start).toFixed(1);
+        const rt = seg.runningTotal ? ` | runningTotal: ${seg.runningTotal}s` : '';
+        console.log(`   [${seg.index}] ${seg.start}s – ${seg.end}s (${dur}s)${rt} | ${seg.relevance}`);
+        console.log(`        "${seg.text.substring(0, 120)}${seg.text.length > 120 ? '...' : ''}"`);
+      }
+      if (targetDurationSeconds) {
+        const overUnder = llmTotalDuration - targetDurationSeconds;
+        console.log(`   📊 LLM total: ${llmTotalDuration.toFixed(1)}s vs target ${targetDurationSeconds}s (${overUnder > 0 ? '+' : ''}${overUnder.toFixed(1)}s)`);
+      }
+      console.log(`📋 ── End of LLM Selection (Attempt ${attempt + 1}) ──\n`);
+
+      // Check if duration is within budget (20% tolerance)
+      if (!targetDurationSeconds || llmTotalDuration <= targetDurationSeconds * 1.20) {
+        if (isRetry) console.log(`   ✅ Retry successful — duration now within budget`);
+        break; // Good enough, move on
+      }
+
+      // Over budget — need retry
+      if (attempt < MAX_DURATION_RETRIES) {
+        const retryMessage = `Your selection totals ${llmTotalDuration.toFixed(1)} seconds of content, but the HARD LIMIT is ${targetDurationSeconds} seconds. That is ${((llmTotalDuration / targetDurationSeconds) * 100).toFixed(0)}% of the budget — too much.
+
+Here is what you selected (with durations):
+${identifiedSegments.map(s => `- [${s.index}] ${s.start}s–${s.end}s (${(s.end - s.start).toFixed(1)}s): "${s.text.substring(0, 80)}..."`).join('\n')}
+
+You MUST cut this down to fit within ${targetDurationSeconds} seconds total. This is a hard constraint that cannot be exceeded.
+- Remove the least essential segments
+- Keep only the absolute best highlights for the user's query
+- The final runningTotal of the last segment MUST be ≤ ${targetDurationSeconds}
+
+Return the reduced JSON array:`;
+
+        // Add assistant response + correction to conversation
+        conversationMessages.push({ role: 'assistant', content: llmContent });
+        conversationMessages.push({ role: 'user', content: retryMessage });
+
+        console.log(`   ⚠️ Over budget (${llmTotalDuration.toFixed(1)}s / ${targetDurationSeconds}s) — sending correction to LLM...`);
+      } else {
+        console.log(`   ⚠️ Still over budget after ${MAX_DURATION_RETRIES} retries (${llmTotalDuration.toFixed(1)}s / ${targetDurationSeconds}s) — proceeding with current selection`);
+      }
     }
 
     console.log(`   ✅ Found ${identifiedSegments.length} relevant segments`);
 
+    // Sort by timestamp and proceed to merge.
+    const selectedSegments = [...identifiedSegments].sort((a, b) => a.start - b.start);
+
     // ──────────────────────────────────────────────
-    // Step 2: Merge adjacent/close segments into clips
+    // Step 3: Merge adjacent/close segments into clips
     // ──────────────────────────────────────────────
-    identifiedSegments.sort((a, b) => a.start - b.start);
 
     const mergedClips: MergedClip[] = [];
     let currentClip: MergedClip | null = null;
 
-    for (const seg of identifiedSegments) {
+    for (const seg of selectedSegments) {
       if (!currentClip) {
         currentClip = {
           start: Math.max(0, seg.start - paddingSeconds),
@@ -351,7 +448,7 @@ RESPONSE (JSON array only):`;
     console.log(`   ✅ Merged into ${mergedClips.length} clip(s)`);
 
     // ──────────────────────────────────────────────
-    // Step 2b: Snap clip boundaries to scene edges
+    // Step 3b: Snap clip boundaries to scene edges
     // ──────────────────────────────────────────────
     const sceneData: SceneBoundary[] = Array.isArray(scenes) && scenes.length > 0
       ? scenes.map((s: any) => ({ start: Number(s.start), end: Number(s.end) }))
@@ -366,7 +463,7 @@ RESPONSE (JSON array only):`;
     }
 
     // ──────────────────────────────────────────────
-    // Step 2c: Hook-first reordering
+    // Step 3c: Hook-first reordering
     // ──────────────────────────────────────────────
     if (hookFirstReorder && mergedClips.length > 1) {
       let bestIdx = 0;
@@ -400,11 +497,16 @@ RESPONSE (JSON array only):`;
       reasons: clip.segments.map((s) => s.relevance).filter(Boolean),
     }));
 
+    const totalDuration = clips.reduce((sum, c) => sum + c.duration, 0);
+    console.log(`   📊 Final output: ${clips.length} clip(s), total ${totalDuration.toFixed(1)}s${targetDurationSeconds ? ` (target: ${targetDurationSeconds}s)` : ''}`);
+
     return NextResponse.json({
       success: true,
       query: userQuery,
       totalSegmentsAnalyzed: segments.length,
       relevantSegmentsFound: identifiedSegments.length,
+      totalDuration: +totalDuration.toFixed(1),
+      targetDuration: targetDurationSeconds,
       clips,
     });
   } catch (error: any) {
