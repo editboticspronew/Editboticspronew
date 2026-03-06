@@ -485,6 +485,48 @@ Return the reduced JSON array:`;
     }
 
     // ──────────────────────────────────────────────
+    // Step 4: Proportional trim fallback
+    // If the total clip duration STILL exceeds the
+    // target after LLM retries, we proportionally
+    // trim each clip from both edges.
+    // Bigger clips absorb more of the cut.
+    // ──────────────────────────────────────────────
+    if (targetDurationSeconds && mergedClips.length > 0) {
+      const preTrimTotal = mergedClips.reduce((sum, c) => sum + (c.end - c.start), 0);
+
+      if (preTrimTotal > targetDurationSeconds * 1.10) {
+        const MIN_CLIP_DURATION = 3.0; // Never trim a clip below 3 seconds
+
+        // Calculate how much of each clip we can keep
+        const keepRatio = targetDurationSeconds / preTrimTotal;
+
+        console.log(`\n✂️ ── Proportional Trim Service ──`);
+        console.log(`   Pre-trim total: ${preTrimTotal.toFixed(1)}s | Target: ${targetDurationSeconds}s | Keep ratio: ${(keepRatio * 100).toFixed(1)}%`);
+
+        for (const clip of mergedClips) {
+          const originalDuration = clip.end - clip.start;
+          const targetClipDuration = Math.max(originalDuration * keepRatio, MIN_CLIP_DURATION);
+
+          if (targetClipDuration < originalDuration) {
+            // Trim equally from both edges, keeping the center content
+            const trimPerSide = (originalDuration - targetClipDuration) / 2;
+            const oldStart = clip.start;
+            const oldEnd = clip.end;
+            clip.start = +(clip.start + trimPerSide).toFixed(2);
+            clip.end = +(clip.end - trimPerSide).toFixed(2);
+            console.log(`   Clip [${oldStart.toFixed(1)}s–${oldEnd.toFixed(1)}s] ${originalDuration.toFixed(1)}s → [${clip.start}s–${clip.end}s] ${(clip.end - clip.start).toFixed(1)}s (trimmed ${(trimPerSide * 2).toFixed(1)}s)`);
+          } else {
+            console.log(`   Clip [${clip.start.toFixed(1)}s–${clip.end.toFixed(1)}s] ${originalDuration.toFixed(1)}s → kept (at minimum)`);
+          }
+        }
+
+        const postTrimTotal = mergedClips.reduce((sum, c) => sum + (c.end - c.start), 0);
+        console.log(`   Post-trim total: ${postTrimTotal.toFixed(1)}s (target: ${targetDurationSeconds}s)`);
+        console.log(`✂️ ── End Proportional Trim ──\n`);
+      }
+    }
+
+    // ──────────────────────────────────────────────
     // Return clip definitions (frontend does the actual clipping)
     // ──────────────────────────────────────────────
     const clips = mergedClips.map((clip, i) => ({
