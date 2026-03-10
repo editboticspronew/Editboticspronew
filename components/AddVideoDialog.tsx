@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React, { useState } from 'react';
 import {
@@ -45,6 +45,12 @@ import {
   PlayArrow,
   Visibility,
   Code,
+  Movie,
+  Mic,
+  Campaign,
+  AutoStories,
+  YouTube,
+  OndemandVideo,
 } from '@mui/icons-material';
 import { TranscriptSegment } from '../utils/audioTranscription';
 import { analyzeVideo, getProviderDisplayName, isProviderConfigured } from '@/lib/ai';
@@ -71,11 +77,15 @@ interface AddVideoDialogProps {
 }
 
 const videoTypes = [
-  { id: 'news', name: 'News', icon: <Newspaper />, color: '#3b82f6' },
-  { id: 'long-short', name: 'Longâ†’Short', icon: <ContentCut />, color: '#6366f1' },
-  { id: 'edit', name: 'Edit', icon: <EditIcon />, color: '#14b8a6' },
-  { id: 'critique', name: 'Critique', icon: <RateReview />, color: '#f59e0b' },
-  { id: 'training', name: 'Training', icon: <School />, color: '#10b981' },
+  { id: 'documentary', name: 'Documentary', icon: <Movie />, color: '#8b5cf6', desc: 'Hook > context > development > conclusion' },
+  { id: 'news_package', name: 'News Package', icon: <Newspaper />, color: '#3b82f6', desc: 'Headline > details > soundbite > closing' },
+  { id: 'interview_highlight', name: 'Interview', icon: <Mic />, color: '#ec4899', desc: 'Best answer > strongest quote > takeaway' },
+  { id: 'review_video', name: 'Review / Critique', icon: <RateReview />, color: '#f59e0b', desc: 'Hook > overview > pros & cons > verdict' },
+  { id: 'social_media_clip', name: 'Social Clip', icon: <ContentCut />, color: '#6366f1', desc: 'Strong hook > main point > fast ending' },
+  { id: 'youtube_video', name: 'YouTube Video', icon: <YouTube />, color: '#ef4444', desc: 'Hook > context > value > call to action' },
+  { id: 'promo_video', name: 'Promo', icon: <Campaign />, color: '#f97316', desc: 'Attention grab > value prop > CTA' },
+  { id: 'story_video', name: 'Story Video', icon: <AutoStories />, color: '#14b8a6', desc: 'Setup > build > climax > resolution' },
+  { id: 'educational_video', name: 'Educational', icon: <School />, color: '#10b981', desc: 'Intro > concept > examples > summary' },
 ];
 
 // Google Cloud Video Intelligence Available Features
@@ -626,7 +636,7 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
             Select the category that best describes your video
           </Typography>
 
-          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)' }, gap: 2 }}>
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)' }, gap: 1.5 }}>
             {videoTypes.map((type) => (
               <Card
                 key={type.id}
@@ -637,30 +647,33 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
                   transition: 'all 0.2s',
                   '&:hover': {
                     borderColor: type.color,
-                    transform: 'translateY(-4px)',
+                    transform: 'translateY(-2px)',
                     boxShadow: 3,
                   },
                 }}
                 onClick={() => handleTypeSelect(type.id)}
               >
-                <CardContent sx={{ textAlign: 'center', py: 3 }}>
+                <CardContent sx={{ textAlign: 'center', py: 2, px: 1.5 }}>
                   <Box
                     sx={{
                       display: 'inline-flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      width: 64,
-                      height: 64,
-                      borderRadius: 2,
+                      width: 48,
+                      height: 48,
+                      borderRadius: 1.5,
                       bgcolor: type.color,
                       color: 'white',
-                      mb: 2,
+                      mb: 1,
                     }}
                   >
-                    {React.cloneElement(type.icon, { sx: { fontSize: 32 } })}
+                    {React.cloneElement(type.icon, { sx: { fontSize: 24 } })}
                   </Box>
-                  <Typography variant="h6" fontWeight={700}>
+                  <Typography variant="subtitle2" fontWeight={700} sx={{ lineHeight: 1.2, mb: 0.5 }}>
                     {type.name}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem', lineHeight: 1.3, display: 'block' }}>
+                    {type.desc}
                   </Typography>
                 </CardContent>
               </Card>
@@ -2047,7 +2060,7 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
     <Dialog 
       open={open} 
       onClose={handleClose}
-      maxWidth={step === 'review-prompt' ? 'md' : 'sm'}
+      maxWidth={step === 'type' || step === 'review-prompt' ? 'md' : 'sm'}
       fullWidth
       fullScreen={isMobile}
       PaperProps={{
