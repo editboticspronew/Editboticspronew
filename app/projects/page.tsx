@@ -38,6 +38,7 @@ import CreateProjectWizard from '@/components/CreateProjectWizard';
 import { useAuth } from '@/hooks/useAuth';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import { fetchUserProjects, deleteProject } from '@/store/projectsSlice';
+import { ThumbnailIcon, getThumbnailColor } from '@/lib/thumbnailIcons';
 
 export default function ProjectsPage() {
   const router = useRouter();
@@ -190,15 +191,14 @@ export default function ProjectsPage() {
                           width: 80,
                           height: 80,
                           borderRadius: 2,
-                          background: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)',
+                          background: `linear-gradient(135deg, ${getThumbnailColor(project.thumbnail || 'Videocam')} 0%, ${alpha(getThumbnailColor(project.thumbnail || 'Videocam'), 0.7)} 100%)`,
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
-                          fontSize: '2rem',
                           flexShrink: 0,
                         }}
                       >
-                        {project.thumbnail || '🎬'}
+                        <ThumbnailIcon name={project.thumbnail || 'Videocam'} size={36} color="white" />
                       </Box>
 
                       {/* Content */}

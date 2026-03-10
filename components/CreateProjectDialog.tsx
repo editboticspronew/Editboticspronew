@@ -24,13 +24,13 @@ import { useRouter } from 'next/navigation';
 import { useAppDispatch } from '@/store/hooks';
 import { createProject } from '@/store/projectsSlice';
 import { useAuth } from '@/hooks/useAuth';
+import { THUMBNAIL_OPTIONS, DEFAULT_THUMBNAIL, ThumbnailIcon } from '@/lib/thumbnailIcons';
 
 interface CreateProjectDialogProps {
   open: boolean;
   onClose: () => void;
 }
 
-const thumbnailEmojis = ['ðŸŽ¬', 'ðŸŽ¥', 'ðŸ“¹', 'ðŸŽžï¸', 'ðŸ“½ï¸', 'ðŸŒ´', 'ðŸ–ï¸', 'ðŸŒ†', 'ðŸŒƒ', 'ðŸŽ¨', 'ðŸŽ­', 'ðŸŽª', 'ðŸŽ¸', 'ðŸŽ¤', 'ðŸŽ§', 'ðŸ“š', 'âœ¨', 'ðŸ”¥', 'ðŸ’Ž', 'ðŸš€'];
 
 export function CreateProjectDialog({ open, onClose }: CreateProjectDialogProps) {
   const dispatch = useAppDispatch();
@@ -43,7 +43,7 @@ export function CreateProjectDialog({ open, onClose }: CreateProjectDialogProps)
   const [formData, setFormData] = useState({
     title: '',
     description: '',
-    thumbnail: 'ðŸŽ¬',
+    thumbnail: DEFAULT_THUMBNAIL,
     tags: [] as string[],
   });
   const [tagInput, setTagInput] = useState('');
@@ -92,7 +92,7 @@ export function CreateProjectDialog({ open, onClose }: CreateProjectDialogProps)
     setFormData({
       title: '',
       description: '',
-      thumbnail: 'ðŸŽ¬',
+      thumbnail: DEFAULT_THUMBNAIL,
       tags: [],
     });
     setTagInput('');
@@ -153,28 +153,27 @@ export function CreateProjectDialog({ open, onClose }: CreateProjectDialogProps)
             placeholder="What's this project about?"
           />
 
-          {/* Thumbnail Emoji */}
+          {/* Thumbnail Icon */}
           <Box>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-              Project Emoji
+              Project Icon
             </Typography>
             <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-              {thumbnailEmojis.map((emoji) => (
+              {THUMBNAIL_OPTIONS.map((option) => (
                 <Box
-                  key={emoji}
-                  onClick={() => setFormData({ ...formData, thumbnail: emoji })}
+                  key={option.id}
+                  onClick={() => setFormData({ ...formData, thumbnail: option.id })}
                   sx={{
                     width: 48,
                     height: 48,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    fontSize: '1.5rem',
                     borderRadius: 1,
                     cursor: 'pointer',
                     border: 2,
-                    borderColor: formData.thumbnail === emoji ? 'primary.main' : 'divider',
-                    bgcolor: formData.thumbnail === emoji ? 'action.selected' : 'transparent',
+                    borderColor: formData.thumbnail === option.id ? 'primary.main' : 'divider',
+                    bgcolor: formData.thumbnail === option.id ? 'action.selected' : 'transparent',
                     transition: 'all 0.2s',
                     '&:hover': {
                       borderColor: 'primary.main',
@@ -182,7 +181,7 @@ export function CreateProjectDialog({ open, onClose }: CreateProjectDialogProps)
                     },
                   }}
                 >
-                  {emoji}
+                  <ThumbnailIcon name={option.id} size={24} color={option.color} />
                 </Box>
               ))}
             </Box>

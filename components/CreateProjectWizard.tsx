@@ -44,6 +44,7 @@ import { useAppDispatch } from '@/store/hooks';
 import { createProject } from '@/store/projectsSlice';
 import { uploadProjectFile } from '@/store/filesSlice';
 import { useAuth } from '@/hooks/useAuth';
+import { THUMBNAIL_OPTIONS, DEFAULT_THUMBNAIL, ThumbnailIcon, getThumbnailColor } from '@/lib/thumbnailIcons';
 
 interface CreateProjectWizardProps {
   open: boolean;
@@ -108,7 +109,6 @@ const templates: ProjectTemplate[] = [
   },
 ];
 
-const thumbnailEmojis = ['ðŸŽ¬', 'ðŸŽ¥', 'ðŸ“¹', 'ðŸŽžï¸', 'ðŸ“½ï¸', 'ðŸŒ´', 'ðŸ–ï¸', 'ðŸŒ†', 'ðŸŒƒ', 'ðŸŽ¨', 'ðŸŽ­', 'ðŸŽª', 'ðŸŽ¸', 'ðŸŽ¤', 'ðŸŽ§', 'ðŸ“š', 'âœ¨', 'ðŸ”¥', 'ðŸ’Ž', 'ðŸš€'];
 
 export default function CreateProjectWizard({ open, onClose }: CreateProjectWizardProps) {
   const dispatch = useAppDispatch();
@@ -126,7 +126,7 @@ export default function CreateProjectWizard({ open, onClose }: CreateProjectWiza
   const [formData, setFormData] = useState({
     title: '',
     description: '',
-    thumbnail: 'ðŸŽ¬',
+    thumbnail: DEFAULT_THUMBNAIL,
     tags: [] as string[],
     template: '' as string,
   });
@@ -152,7 +152,7 @@ export default function CreateProjectWizard({ open, onClose }: CreateProjectWiza
     setFormData({
       title: '',
       description: '',
-      thumbnail: 'ðŸŽ¬',
+      thumbnail: DEFAULT_THUMBNAIL,
       tags: [],
       template: '',
     });
@@ -345,10 +345,10 @@ export default function CreateProjectWizard({ open, onClose }: CreateProjectWiza
                   Choose Thumbnail
                 </Typography>
                 <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                  {thumbnailEmojis.map((emoji) => (
+                  {THUMBNAIL_OPTIONS.map((option) => (
                     <Box
-                      key={emoji}
-                      onClick={() => setFormData({ ...formData, thumbnail: emoji })}
+                      key={option.id}
+                      onClick={() => setFormData({ ...formData, thumbnail: option.id })}
                       sx={{
                         width: 48,
                         height: 48,
@@ -357,10 +357,9 @@ export default function CreateProjectWizard({ open, onClose }: CreateProjectWiza
                         justifyContent: 'center',
                         borderRadius: 1,
                         cursor: 'pointer',
-                        fontSize: 24,
                         border: 2,
-                        borderColor: formData.thumbnail === emoji ? 'primary.main' : 'divider',
-                        bgcolor: formData.thumbnail === emoji ? 'action.selected' : 'transparent',
+                        borderColor: formData.thumbnail === option.id ? 'primary.main' : 'divider',
+                        bgcolor: formData.thumbnail === option.id ? 'action.selected' : 'transparent',
                         transition: 'all 0.2s',
                         '&:hover': {
                           borderColor: 'primary.main',
@@ -368,7 +367,7 @@ export default function CreateProjectWizard({ open, onClose }: CreateProjectWiza
                         },
                       }}
                     >
-                      {emoji}
+                      <ThumbnailIcon name={option.id} size={24} color={option.color} />
                     </Box>
                   ))}
                 </Box>
@@ -447,7 +446,7 @@ export default function CreateProjectWizard({ open, onClose }: CreateProjectWiza
 
             <Card sx={{ p: 3 }}>
               <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
-                <Box sx={{ fontSize: 48 }}>{formData.thumbnail}</Box>
+                <ThumbnailIcon name={formData.thumbnail} size={48} color={getThumbnailColor(formData.thumbnail)} />
                 <Box sx={{ flex: 1 }}>
                   <Typography variant="h6" fontWeight={700}>
                     {formData.title || 'Untitled Project'}
@@ -550,10 +549,10 @@ export default function CreateProjectWizard({ open, onClose }: CreateProjectWiza
                   Choose Thumbnail
                 </Typography>
                 <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                  {thumbnailEmojis.map((emoji) => (
+                  {THUMBNAIL_OPTIONS.map((option) => (
                     <Box
-                      key={emoji}
-                      onClick={() => setFormData({ ...formData, thumbnail: emoji })}
+                      key={option.id}
+                      onClick={() => setFormData({ ...formData, thumbnail: option.id })}
                       sx={{
                         width: 48,
                         height: 48,
@@ -562,10 +561,9 @@ export default function CreateProjectWizard({ open, onClose }: CreateProjectWiza
                         justifyContent: 'center',
                         borderRadius: 1,
                         cursor: 'pointer',
-                        fontSize: 24,
                         border: 2,
-                        borderColor: formData.thumbnail === emoji ? 'primary.main' : 'divider',
-                        bgcolor: formData.thumbnail === emoji ? 'action.selected' : 'transparent',
+                        borderColor: formData.thumbnail === option.id ? 'primary.main' : 'divider',
+                        bgcolor: formData.thumbnail === option.id ? 'action.selected' : 'transparent',
                         transition: 'all 0.2s',
                         '&:hover': {
                           borderColor: 'primary.main',
@@ -573,7 +571,7 @@ export default function CreateProjectWizard({ open, onClose }: CreateProjectWiza
                         },
                       }}
                     >
-                      {emoji}
+                      <ThumbnailIcon name={option.id} size={24} color={option.color} />
                     </Box>
                   ))}
                 </Box>
@@ -730,7 +728,7 @@ export default function CreateProjectWizard({ open, onClose }: CreateProjectWiza
               <Card>
                 <CardContent>
                   <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
-                    <Box sx={{ fontSize: 48 }}>{formData.thumbnail}</Box>
+                    <ThumbnailIcon name={formData.thumbnail} size={48} color={getThumbnailColor(formData.thumbnail)} />
                     <Box sx={{ flex: 1 }}>
                       <Typography variant="h6" fontWeight={700}>
                         {formData.title || 'Untitled Project'}
