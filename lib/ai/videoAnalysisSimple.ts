@@ -67,7 +67,7 @@ export async function analyzeVideoSimple(
       messages: [
         {
           role: 'system',
-          content: `You are a professional video editing AI assistant. Analyze video information and provide specific, actionable editing recommendations. Always include timestamps in MM:SS format.`,
+          content: `You are an expert AI video director and content analyst. Analyze video transcripts to understand the footage's narrative structure, identify its strongest moments, and provide specific, actionable editing recommendations. Think like a professional editor evaluating raw footage — prioritize storytelling, clarity, and viewer engagement. Always include timestamps in MM:SS format.`,
         },
         {
           role: 'user',

@@ -4,19 +4,18 @@ import React, { useState, useCallback } from 'react';
 import {
   Box,
   Typography,
-  Card,
-  CardContent,
   IconButton,
   LinearProgress,
   Alert,
   Button,
   Chip,
   Tooltip,
-  Paper,
   Dialog,
   DialogTitle,
   DialogContent,
   Divider,
+  useTheme,
+  alpha,
 } from '@mui/material';
 import {
   CloudUpload,
@@ -29,6 +28,8 @@ import {
   Subtitles,
   Visibility,
   ContentCut,
+  PlayArrow,
+  InsertDriveFile,
 } from '@mui/icons-material';
 import { useDropzone } from 'react-dropzone';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
@@ -46,6 +47,8 @@ interface FileUploadZoneProps {
 }
 
 export default function FileUploadZone({ projectId, userId, acceptedTypes = 'all' }: FileUploadZoneProps) {
+  const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
   const dispatch = useAppDispatch();
   const { files, uploadProgress, loading, error } = useAppSelector((state) => state.files);
   const [uploadError, setUploadError] = useState('');
@@ -211,178 +214,419 @@ export default function FileUploadZone({ projectId, userId, acceptedTypes = 'all
     dispatch(fetchProjectFiles(projectId));
   };
 
-  const getFileIcon = (type: string) => {
+  const getTypeColor = (type: string) => {
     switch (type) {
-      case 'video':
-        return <VideoLibrary color="primary" />;
-      case 'audio':
-        return <AudioFile color="secondary" />;
-      case 'image':
-        return <ImageIcon color="success" />;
-      default:
-        return <CloudUpload />;
+      case 'video': return '#14b8a6';
+      case 'audio': return '#8b5cf6';
+      case 'image': return '#f59e0b';
+      default: return '#71717a';
+    }
+  };
+
+  const getTypeIcon = (type: string, size = 20) => {
+    const color = getTypeColor(type);
+    switch (type) {
+      case 'video': return <VideoLibrary sx={{ fontSize: size, color }} />;
+      case 'audio': return <AudioFile sx={{ fontSize: size, color }} />;
+      case 'image': return <ImageIcon sx={{ fontSize: size, color }} />;
+      default: return <InsertDriveFile sx={{ fontSize: size, color }} />;
     }
   };
 
   const formatFileSize = (bytes: number) => {
-    if (bytes === 0) return '0 Bytes';
+    if (bytes === 0) return '0 B';
     const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const sizes = ['B', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+    return (bytes / Math.pow(k, i)).toFixed(i > 1 ? 1 : 0) + ' ' + sizes[i];
+  };
+
+  const formatDuration = (sec?: number) => {
+    if (!sec) return null;
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60);
+    return `${m}:${s.toString().padStart(2, '0')}`;
   };
 
   return (
     <Box>
-      {/* Drop Zone */}
-      <Card
+      {/* ── Modern Drop Zone ── */}
+      <Box
         {...getRootProps()}
         sx={{
           border: 2,
           borderStyle: 'dashed',
           borderColor: isDragActive ? 'primary.main' : 'divider',
-          bgcolor: isDragActive ? 'action.hover' : 'transparent',
+          bgcolor: isDragActive
+            ? (isDark ? alpha('#14b8a6', 0.06) : alpha('#0d9488', 0.04))
+            : 'transparent',
+          borderRadius: 3,
           cursor: 'pointer',
           transition: 'all 0.2s',
           mb: 3,
+          py: 5,
+          textAlign: 'center',
           '&:hover': {
             borderColor: 'primary.main',
-            bgcolor: 'action.hover',
+            bgcolor: isDark ? alpha('#14b8a6', 0.04) : alpha('#0d9488', 0.03),
           },
         }}
       >
-        <CardContent sx={{ textAlign: 'center', py: 6 }}>
-          <input {...getInputProps()} />
-          <CloudUpload sx={{ fontSize: 64, color: 'primary.main', mb: 2 }} />
-          <Typography variant="h6" fontWeight={600}>
-            {isDragActive ? 'Drop files here' : 'Drag & drop files here or click to browse'}
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-            {acceptedTypes === 'video' && 'Supported: MP4, WebM, MOV, AVI'}
-            {acceptedTypes === 'image' && 'Supported: JPG, PNG, WebP, GIF'}
-            {acceptedTypes === 'audio' && 'Supported: MP3, WAV, AAC, OGG'}
-            {acceptedTypes === 'all' && 'Supported: Videos, Images, Audio files'}
-          </Typography>
-        </CardContent>
-      </Card>
+        <input {...getInputProps()} />
+        <Box
+          sx={{
+            width: 56,
+            height: 56,
+            borderRadius: '50%',
+            bgcolor: isDark ? alpha('#14b8a6', 0.1) : alpha('#0d9488', 0.08),
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            mx: 'auto',
+            mb: 2,
+          }}
+        >
+          <CloudUpload sx={{ fontSize: 26, color: 'primary.main' }} />
+        </Box>
+        <Typography variant="body1" fontWeight={600} sx={{ mb: 0.5 }}>
+          {isDragActive ? 'Drop files here' : 'Drag & drop files here'}
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.85rem' }}>
+          {!isDragActive && 'or click to browse · '}
+          {acceptedTypes === 'video' && 'MP4, WebM, MOV, AVI'}
+          {acceptedTypes === 'image' && 'JPG, PNG, WebP, GIF'}
+          {acceptedTypes === 'audio' && 'MP3, WAV, AAC, OGG'}
+          {acceptedTypes === 'all' && 'Videos, Images, Audio up to 500 MB'}
+        </Typography>
+      </Box>
 
-      {/* Error Message */}
+      {/* Error */}
       {(uploadError || error) && (
-        <Alert severity="error" sx={{ mb: 3 }} onClose={() => setUploadError('')}>
+        <Alert severity="error" sx={{ mb: 3, borderRadius: 2 }} onClose={() => setUploadError('')}>
           {uploadError || error}
         </Alert>
       )}
 
-      {/* File List */}
+      {/* ── Modern File Cards ── */}
       {projectFiles.length > 0 && (
         <Box>
-          <Typography variant="h6" fontWeight={700} gutterBottom>
-            Project Files ({projectFiles.length})
+          <Typography variant="body2" fontWeight={600} sx={{ mb: 2, color: 'text.secondary', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            Files ({projectFiles.length})
           </Typography>
-          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
-            {projectFiles.map((file) => (
-              <Box key={file.id} sx={{ width: { xs: '100%', sm: 'calc(50% - 8px)', md: 'calc(33.333% - 11px)' } }}>
-                <Card variant="outlined">
-                  <CardContent>
-                    <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
-                      <Box sx={{ flexShrink: 0 }}>
-                        {getFileIcon(file.type)}
-                      </Box>
-                      <Box sx={{ flexGrow: 1, minWidth: 0 }}>
-                        <Typography variant="body2" fontWeight={600} noWrap>
-                          {file.name}
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: {
+                xs: '1fr',
+                sm: 'repeat(2, 1fr)',
+                md: 'repeat(3, 1fr)',
+                lg: 'repeat(4, 1fr)',
+              },
+              gap: 2,
+            }}
+          >
+            {projectFiles.map((file) => {
+              const typeColor = getTypeColor(file.type);
+              const hasTimestampedTranscription = file.transcriptionSegments && file.transcriptionSegments.length > 0;
+              const needsTranscription = (file.type === 'audio' || file.type === 'video') &&
+                (!file.transcription || !hasTimestampedTranscription);
+              const canGenerateClips = file.type === 'video' && file.videoType === 'long-short' && file.transcription;
+
+              return (
+                <Box
+                  key={file.id}
+                  sx={{
+                    bgcolor: 'background.paper',
+                    border: 1,
+                    borderColor: 'divider',
+                    borderRadius: 3,
+                    overflow: 'hidden',
+                    transition: 'all 0.2s cubic-bezier(0.4,0,0.2,1)',
+                    '&:hover': {
+                      borderColor: isDark ? alpha(typeColor, 0.4) : typeColor,
+                      transform: 'translateY(-3px)',
+                      boxShadow: isDark
+                        ? `0 16px 32px rgba(0,0,0,0.45)`
+                        : `0 16px 32px rgba(0,0,0,0.07)`,
+                    },
+                    '&:hover .file-hover-overlay': { opacity: 1 },
+                  }}
+                >
+                  {/* Thumbnail */}
+                  <Box
+                    sx={{
+                      position: 'relative',
+                      aspectRatio: '16/9',
+                      bgcolor: isDark ? alpha(typeColor, 0.06) : alpha(typeColor, 0.04),
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      overflow: 'hidden',
+                    }}
+                  >
+                    {file.thumbnail ? (
+                      <Box
+                        component="img"
+                        src={file.thumbnail}
+                        alt={file.name}
+                        sx={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                      />
+                    ) : (
+                      <Box sx={{ textAlign: 'center', opacity: 0.5 }}>
+                        {getTypeIcon(file.type, 36)}
+                        <Typography sx={{ display: 'block', mt: 0.5, fontSize: '0.6rem', fontWeight: 600, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                          {file.type}
                         </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {formatFileSize(file.size)} • {file.type}
-                        </Typography>
-                        {file.transcription && (
-                          <Box sx={{ mt: 1 }}>
-                            <Chip
-                              icon={<Subtitles />}
-                              label={
-                                file.transcriptionSegments && file.transcriptionSegments.length > 0
-                                  ? `Transcription (${file.transcriptionSegments.length} segments)`
-                                  : 'Transcription (no timestamps)'
-                              }
-                              size="small"
-                              color={file.transcriptionSegments && file.transcriptionSegments.length > 0 ? 'success' : 'warning'}
-                              onClick={() => setViewTranscription({
-                                fileName: file.name,
-                                transcription: file.transcription!,
-                                segments: file.transcriptionSegments as any,
-                              })}
-                            />
-                          </Box>
-                        )}
-                        {file.videoType && (
-                          <Box sx={{ mt: 1 }}>
-                            <Chip
-                              label={file.videoType}
-                              size="small"
-                              variant="outlined"
-                            />
-                          </Box>
-                        )}
                       </Box>
-                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                        {(file.type === 'audio' || file.type === 'video') && (
-                          !file.transcription || !(file.transcriptionSegments && file.transcriptionSegments.length > 0)
-                        ) && (
-                          <Tooltip title={file.transcription ? 'Re-transcribe with timestamps' : 'Transcribe'}>
-                            <IconButton
-                              size="small"
-                              color={file.transcription ? 'warning' : 'default'}
-                              onClick={() => setSelectedAudioForTranscription({
-                                id: file.id,
-                                name: file.name,
-                                url: file.url,
-                                storagePath: file.storagePath,
-                              })}
-                            >
-                              <TranslateIcon fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                        )}
-                        {file.type === 'video' && file.videoType === 'long-short' && file.transcription && (
-                          <Tooltip title="Generate Clips">
-                            <IconButton
-                              size="small"
-                              color="primary"
-                              onClick={() => setClipGenerationFile({
-                                id: file.id,
-                                name: file.name,
-                                url: file.url,
-                                storagePath: file.storagePath,
-                                transcription: file.transcription,
-                                transcriptionSegments: file.transcriptionSegments as any,
-                                videoType: file.videoType,
-                                visionAnalysis: file.visionAnalysis,
-                              })}
-                            >
-                              <ContentCut fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                        )}
-                        <Tooltip title="Delete">
-                          <IconButton
-                            size="small"
-                            onClick={() => handleDelete(file.id, file.storagePath)}
-                            color="error"
-                          >
-                            <Delete fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
+                    )}
+
+                    {/* Hover overlay with play */}
+                    {(file.type === 'video' || file.type === 'audio') && (
+                      <Box
+                        className="file-hover-overlay"
+                        sx={{
+                          position: 'absolute',
+                          inset: 0,
+                          bgcolor: 'rgba(0,0,0,0.45)',
+                          backdropFilter: 'blur(2px)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          opacity: 0,
+                          transition: 'opacity 0.2s',
+                        }}
+                      >
+                        <Box
+                          sx={{
+                            width: 44,
+                            height: 44,
+                            borderRadius: '50%',
+                            bgcolor: 'rgba(255,255,255,0.92)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+                          }}
+                        >
+                          <PlayArrow sx={{ fontSize: 24, color: '#111', ml: 0.3 }} />
+                        </Box>
                       </Box>
+                    )}
+
+                    {/* Duration pill */}
+                    {file.duration && (
+                      <Box
+                        sx={{
+                          position: 'absolute',
+                          bottom: 6,
+                          right: 6,
+                          bgcolor: 'rgba(0,0,0,0.8)',
+                          backdropFilter: 'blur(4px)',
+                          color: '#fff',
+                          px: 0.8,
+                          py: 0.25,
+                          borderRadius: 1,
+                          fontSize: '0.65rem',
+                          fontWeight: 700,
+                          fontFamily: 'monospace',
+                        }}
+                      >
+                        {formatDuration(file.duration)}
+                      </Box>
+                    )}
+
+                    {/* Type badge */}
+                    <Box
+                      sx={{
+                        position: 'absolute',
+                        top: 6,
+                        left: 6,
+                        bgcolor: alpha(typeColor, 0.85),
+                        backdropFilter: 'blur(8px)',
+                        color: '#fff',
+                        px: 0.8,
+                        py: 0.25,
+                        borderRadius: 1,
+                        fontSize: '0.58rem',
+                        fontWeight: 700,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.04em',
+                      }}
+                    >
+                      {file.type}
                     </Box>
-                  </CardContent>
-                </Card>
-              </Box>
-            ))}
+                  </Box>
+
+                  {/* File info */}
+                  <Box sx={{ px: 1.5, pt: 1.5, pb: 0.5 }}>
+                    <Typography variant="body2" fontWeight={600} noWrap sx={{ fontSize: '0.85rem', mb: 0.3 }}>
+                      {file.originalName || file.name}
+                    </Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8, flexWrap: 'wrap' }}>
+                      <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+                        {formatFileSize(file.size)}
+                      </Typography>
+                      {file.transcription && (
+                        <Box
+                          onClick={() => setViewTranscription({
+                            fileName: file.name,
+                            transcription: file.transcription!,
+                            segments: file.transcriptionSegments as any,
+                          })}
+                          sx={{
+                            bgcolor: isDark ? alpha('#14b8a6', 0.12) : alpha('#14b8a6', 0.08),
+                            color: '#14b8a6',
+                            px: 0.8,
+                            py: 0.15,
+                            borderRadius: 0.8,
+                            fontSize: '0.6rem',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            transition: 'all 0.15s',
+                            '&:hover': { bgcolor: alpha('#14b8a6', 0.2) },
+                          }}
+                        >
+                          {hasTimestampedTranscription
+                            ? `${file.transcriptionSegments!.length} segments`
+                            : 'Transcribed'}
+                        </Box>
+                      )}
+                      {file.videoType && (
+                        <Box
+                          sx={{
+                            bgcolor: isDark ? alpha('#6366f1', 0.12) : alpha('#6366f1', 0.08),
+                            color: '#6366f1',
+                            px: 0.8,
+                            py: 0.15,
+                            borderRadius: 0.8,
+                            fontSize: '0.6rem',
+                            fontWeight: 700,
+                          }}
+                        >
+                          {file.videoType}
+                        </Box>
+                      )}
+                      {file.aiAnalysis && (
+                        <Box
+                          sx={{
+                            bgcolor: isDark ? alpha('#8b5cf6', 0.12) : alpha('#8b5cf6', 0.08),
+                            color: '#8b5cf6',
+                            px: 0.8,
+                            py: 0.15,
+                            borderRadius: 0.8,
+                            fontSize: '0.6rem',
+                            fontWeight: 700,
+                          }}
+                        >
+                          AI Analyzed
+                        </Box>
+                      )}
+                    </Box>
+                  </Box>
+
+                  {/* ── Action Buttons ── */}
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 0.5,
+                      px: 1,
+                      py: 1,
+                      borderTop: 1,
+                      borderColor: isDark ? alpha('#fff', 0.04) : alpha('#000', 0.04),
+                      mt: 0.5,
+                    }}
+                  >
+                    {/* Transcribe */}
+                    {needsTranscription && (
+                      <Tooltip title={file.transcription ? 'Re-transcribe with timestamps' : 'Transcribe'}>
+                        <IconButton
+                          size="small"
+                          onClick={() => setSelectedAudioForTranscription({
+                            id: file.id,
+                            name: file.name,
+                            url: file.url,
+                            storagePath: file.storagePath,
+                          })}
+                          sx={{
+                            color: file.transcription ? '#f59e0b' : 'text.secondary',
+                            '&:hover': { bgcolor: isDark ? alpha('#fff', 0.06) : alpha('#000', 0.04) },
+                          }}
+                        >
+                          <TranslateIcon sx={{ fontSize: 17 }} />
+                        </IconButton>
+                      </Tooltip>
+                    )}
+
+                    {/* View Transcription */}
+                    {file.transcription && (
+                      <Tooltip title="View Transcription">
+                        <IconButton
+                          size="small"
+                          onClick={() => setViewTranscription({
+                            fileName: file.name,
+                            transcription: file.transcription!,
+                            segments: file.transcriptionSegments as any,
+                          })}
+                          sx={{
+                            color: '#14b8a6',
+                            '&:hover': { bgcolor: isDark ? alpha('#14b8a6', 0.1) : alpha('#14b8a6', 0.06) },
+                          }}
+                        >
+                          <Subtitles sx={{ fontSize: 17 }} />
+                        </IconButton>
+                      </Tooltip>
+                    )}
+
+                    {/* Generate Clips */}
+                    {canGenerateClips && (
+                      <Tooltip title="Generate Clips">
+                        <IconButton
+                          size="small"
+                          onClick={() => setClipGenerationFile({
+                            id: file.id,
+                            name: file.name,
+                            url: file.url,
+                            storagePath: file.storagePath,
+                            transcription: file.transcription,
+                            transcriptionSegments: file.transcriptionSegments as any,
+                            videoType: file.videoType,
+                            visionAnalysis: file.visionAnalysis,
+                          })}
+                          sx={{
+                            color: 'primary.main',
+                            '&:hover': { bgcolor: isDark ? alpha('#14b8a6', 0.1) : alpha('#14b8a6', 0.06) },
+                          }}
+                        >
+                          <ContentCut sx={{ fontSize: 17 }} />
+                        </IconButton>
+                      </Tooltip>
+                    )}
+
+                    <Box sx={{ flexGrow: 1 }} />
+
+                    {/* Delete */}
+                    <Tooltip title="Delete">
+                      <IconButton
+                        size="small"
+                        onClick={() => handleDelete(file.id, file.storagePath)}
+                        sx={{
+                          color: isDark ? alpha('#ef4444', 0.7) : '#ef4444',
+                          '&:hover': { bgcolor: alpha('#ef4444', 0.1) },
+                        }}
+                      >
+                        <Delete sx={{ fontSize: 17 }} />
+                      </IconButton>
+                    </Tooltip>
+                  </Box>
+                </Box>
+              );
+            })}
           </Box>
         </Box>
       )}
 
-      {loading && <LinearProgress sx={{ mt: 2 }} />}
+      {loading && <LinearProgress sx={{ mt: 2, borderRadius: 1 }} />}
 
       {/* Transcription Modal */}
       <TranscriptionModal

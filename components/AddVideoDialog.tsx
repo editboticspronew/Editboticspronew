@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useState } from 'react';
 import {
@@ -43,6 +43,8 @@ import {
   AutoFixHigh,
   Download,
   PlayArrow,
+  Visibility,
+  Code,
 } from '@mui/icons-material';
 import { TranscriptSegment } from '../utils/audioTranscription';
 import { analyzeVideo, getProviderDisplayName, isProviderConfigured } from '@/lib/ai';
@@ -70,8 +72,8 @@ interface AddVideoDialogProps {
 
 const videoTypes = [
   { id: 'news', name: 'News', icon: <Newspaper />, color: '#3b82f6' },
-  { id: 'long-short', name: 'Long→Short', icon: <ContentCut />, color: '#8b5cf6' },
-  { id: 'edit', name: 'Edit', icon: <EditIcon />, color: '#ec4899' },
+  { id: 'long-short', name: 'Longâ†’Short', icon: <ContentCut />, color: '#6366f1' },
+  { id: 'edit', name: 'Edit', icon: <EditIcon />, color: '#14b8a6' },
   { id: 'critique', name: 'Critique', icon: <RateReview />, color: '#f59e0b' },
   { id: 'training', name: 'Training', icon: <School />, color: '#10b981' },
 ];
@@ -84,9 +86,9 @@ const VIDEO_ANALYSIS_FEATURES = [
   { id: 'FACE_DETECTION', name: 'Face Detection', description: 'Detect and track faces in the video' },
   { id: 'SPEECH_TRANSCRIPTION', name: 'Speech Transcription', description: 'Transcribe speech to text (Google Cloud)' },
   { id: 'TEXT_DETECTION', name: 'Text Detection', description: 'Detect and extract text appearing in the video' },
-  { id: 'OBJECT_TRACKING', name: 'Object Tracking', description: 'Detect and track objects throughout the video (⚠️ Frame-heavy, slower)', isFrameHeavy: true },
-  { id: 'LOGO_RECOGNITION', name: 'Logo Recognition', description: 'Detect and recognize brand logos (⚠️ Frame-heavy)', isFrameHeavy: true },
-  { id: 'PERSON_DETECTION', name: 'Person Detection', description: 'Detect and track people in the video (⚠️ Frame-heavy, slower)', isFrameHeavy: true },
+  { id: 'OBJECT_TRACKING', name: 'Object Tracking', description: 'Detect and track objects throughout the video (âš ï¸ Frame-heavy, slower)', isFrameHeavy: true },
+  { id: 'LOGO_RECOGNITION', name: 'Logo Recognition', description: 'Detect and recognize brand logos (âš ï¸ Frame-heavy)', isFrameHeavy: true },
+  { id: 'PERSON_DETECTION', name: 'Person Detection', description: 'Detect and track people in the video (âš ï¸ Frame-heavy, slower)', isFrameHeavy: true },
 ];
 
 // Default features - exclude frame-heavy features that cause bloated responses
@@ -109,7 +111,7 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const dispatch = useAppDispatch();
-  const [step, setStep] = useState<'type' | 'upload' | 'selected' | 'uploading' | 'transcribe' | 'analyze'>('type');
+  const [step, setStep] = useState<'type' | 'upload' | 'selected' | 'uploading' | 'transcribe' | 'analyze' | 'review-prompt'>('type');
   const [selectedType, setSelectedType] = useState<string>('');
   const [selectedFile, setSelectedFile] = useState<File | null>(preSelectedFile || null);
   const [firebaseUrl, setFirebaseUrl] = useState<string>(''); // Firebase Storage URL
@@ -135,6 +137,19 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
   const [autoEditStats, setAutoEditStats] = useState<any>(null);
   const [mergedVideo, setMergedVideo] = useState<{ blob: Blob; objectUrl: string; fileSize: number } | null>(null);
   const [autoEditError, setAutoEditError] = useState('');
+
+  // Prompt preview state
+  const [promptPreview, setPromptPreview] = useState<{
+    systemPrompt: string;
+    userPrompt: string;
+    estimatedTokens: number;
+    compressionLevel: number;
+    compressionNote: string;
+    programType: string;
+    segmentCount: number;
+    twoPassUsed: boolean;
+  } | null>(null);
+  const [loadingPromptPreview, setLoadingPromptPreview] = useState(false);
 
   // When preSelectedFile is provided, initialize selectedFile
   React.useEffect(() => {
@@ -170,6 +185,8 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
         setAutoEditClips([]);
         setAutoEditStats(null);
         setAutoEditError('');
+        setPromptPreview(null);
+        setLoadingPromptPreview(false);
         if (mergedVideo) {
           try { URL.revokeObjectURL(mergedVideo.objectUrl); } catch { /* ignore */ }
         }
@@ -268,9 +285,9 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
           })
         ).unwrap();
         setSavedDocId(savedFile.id);
-        console.log('✅ Initial file metadata saved to database:', savedFile.id);
+        console.log('âœ… Initial file metadata saved to database:', savedFile.id);
       } catch (dbErr: any) {
-        console.error('⚠️ Failed to save initial metadata:', dbErr);
+        console.error('âš ï¸ Failed to save initial metadata:', dbErr);
         // Don't block the flow - file is uploaded, metadata save can be retried
       }
       
@@ -295,10 +312,10 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
 
     try {
       // Use Google Cloud Video Intelligence for transcription
-      // Works directly on the video in GCS — no audio extraction needed
+      // Works directly on the video in GCS â€” no audio extraction needed
       const { transcribeVideo } = await import('@/utils/audioTranscription');
 
-      console.log('🎤 Transcribing video via Google Cloud:', storagePath);
+      console.log('ðŸŽ¤ Transcribing video via Google Cloud:', storagePath);
       
       const result = await transcribeVideo(storagePath);
 
@@ -317,9 +334,9 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
               },
             })
           ).unwrap();
-          console.log('✅ Transcription saved to database');
+          console.log('âœ… Transcription saved to database');
         } catch (dbErr: any) {
-          console.error('⚠️ Failed to save transcription to database:', dbErr);
+          console.error('âš ï¸ Failed to save transcription to database:', dbErr);
           // Don't block the flow
         }
       }
@@ -364,7 +381,7 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
       );
 
       setAnalysis(result);
-      console.log('✅ AI Analysis complete');
+      console.log('âœ… AI Analysis complete');
       
       // Save AI analysis to database incrementally
       if (savedDocId) {
@@ -375,9 +392,9 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
               updates: { aiAnalysis: result },
             })
           ).unwrap();
-          console.log('✅ AI analysis saved to database');
+          console.log('âœ… AI analysis saved to database');
         } catch (dbErr: any) {
-          console.error('⚠️ Failed to save AI analysis to database:', dbErr);
+          console.error('âš ï¸ Failed to save AI analysis to database:', dbErr);
         }
       }
     } catch (err: any) {
@@ -385,6 +402,51 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
       setError(err.message || 'Failed to analyze video. You can skip this step.');
     } finally {
       setAnalyzing(false);
+    }
+  };
+
+  const handlePreviewPrompt = async () => {
+    if (!analysis) return;
+
+    setLoadingPromptPreview(true);
+    setError('');
+
+    try {
+      const response = await fetch('/api/auto-edit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          analysis: analysis.analysis,
+          transcriptionSegments,
+          videoType: selectedType,
+          recommendations: analysis.recommendations,
+          previewOnly: true,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to build prompt preview');
+      }
+
+      setPromptPreview({
+        systemPrompt: data.systemPrompt,
+        userPrompt: data.userPrompt,
+        estimatedTokens: data.estimatedTokens,
+        compressionLevel: data.compressionLevel,
+        compressionNote: data.compressionNote,
+        programType: data.programType,
+        segmentCount: data.segmentCount,
+        twoPassUsed: data.twoPassUsed,
+      });
+
+      setStep('review-prompt');
+    } catch (err: any) {
+      console.error('Prompt preview error:', err);
+      setError(err.message || 'Failed to build prompt preview');
+    } finally {
+      setLoadingPromptPreview(false);
     }
   };
 
@@ -475,9 +537,9 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
               },
             })
           ).unwrap();
-          console.log('✅ Auto-edit metadata saved to database');
+          console.log('âœ… Auto-edit metadata saved to database');
         } catch (dbErr: any) {
-          console.error('⚠️ Failed to save auto-edit metadata:', dbErr);
+          console.error('âš ï¸ Failed to save auto-edit metadata:', dbErr);
         }
       }
     } catch (err: any) {
@@ -724,7 +786,7 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
                   {selectedFile?.name}
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
-                  {selectedFile && `${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB • ${selectedTypeData?.name}`}
+                  {selectedFile && `${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB â€¢ ${selectedTypeData?.name}`}
                 </Typography>
               </Box>
             </Box>
@@ -782,7 +844,7 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
             ) : (
               <Alert severity="success" sx={{ mb: 2 }}>
                 <Typography variant="subtitle2" fontWeight={600} gutterBottom>
-                  ✅ Upload Complete!
+                  âœ… Upload Complete!
                 </Typography>
                 <Typography variant="body2">
                   Your video has been uploaded to Firebase Storage{savedDocId ? ' and saved to the database' : ''}.
@@ -832,7 +894,7 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
                 {selectedFile?.name}
               </Typography>
               <Typography variant="caption" color="text.secondary">
-                {selectedFile && `${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB • ${selectedTypeData?.name}`}
+                {selectedFile && `${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB â€¢ ${selectedTypeData?.name}`}
               </Typography>
             </Box>
           </Box>
@@ -869,7 +931,7 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
           {transcription && (
             <>
               <Typography variant="h6" fontWeight={700} gutterBottom>
-                Transcription Complete ✓
+                Transcription Complete âœ“
               </Typography>
               <Card
                 variant="outlined"
@@ -1097,7 +1159,7 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
           {analysis && (
             <>
               <Typography variant="h6" fontWeight={700} gutterBottom>
-                AI Analysis Complete ✓
+                AI Analysis Complete âœ“
               </Typography>
               
               <Card
@@ -1125,7 +1187,7 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
                     <Accordion defaultExpanded>
                       <AccordionSummary expandIcon={<ExpandMore />}>
                         <Typography variant="subtitle2" fontWeight={600}>
-                          📋 Video Summary
+                          ðŸ“‹ Video Summary
                         </Typography>
                       </AccordionSummary>
                       <AccordionDetails>
@@ -1193,7 +1255,7 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
                     <Accordion defaultExpanded>
                       <AccordionSummary expandIcon={<ExpandMore />}>
                         <Typography variant="subtitle2" fontWeight={600}>
-                          📹 Detected Scenes ({analysis.analysis.scenes.length})
+                          ðŸ“¹ Detected Scenes ({analysis.analysis.scenes.length})
                         </Typography>
                       </AccordionSummary>
                       <AccordionDetails>
@@ -1218,7 +1280,7 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
                     <Accordion>
                       <AccordionSummary expandIcon={<ExpandMore />}>
                         <Typography variant="subtitle2" fontWeight={600}>
-                          ⭐ Key Moments ({analysis.analysis.keyMoments.length})
+                          â­ Key Moments ({analysis.analysis.keyMoments.length})
                         </Typography>
                       </AccordionSummary>
                       <AccordionDetails>
@@ -1243,7 +1305,7 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
                     <Accordion defaultExpanded>
                       <AccordionSummary expandIcon={<ExpandMore />}>
                         <Typography variant="subtitle2" fontWeight={600}>
-                          💡 AI Editing Recommendations
+                          ðŸ’¡ AI Editing Recommendations
                         </Typography>
                       </AccordionSummary>
                       <AccordionDetails>
@@ -1302,7 +1364,7 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
                   <Accordion>
                     <AccordionSummary expandIcon={<ExpandMore />}>
                       <Typography variant="subtitle2" fontWeight={600}>
-                        📄 Transcript Analyzed
+                        ðŸ“„ Transcript Analyzed
                       </Typography>
                     </AccordionSummary>
                     <AccordionDetails>
@@ -1381,7 +1443,227 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
                 Video is ready to upload with AI analysis!
               </Alert>
 
-              {/* ── Auto-Edit Section ── */}
+              {/* Next Step: Review AI Prompt & Generate */}
+              <Divider sx={{ my: 2 }} />
+              
+              <Card
+                variant="outlined"
+                sx={{
+                  p: 2,
+                  mb: 2,
+                  background: 'linear-gradient(135deg, rgba(99,102,241,0.05) 0%, rgba(236,72,153,0.05) 100%)',
+                  borderColor: 'divider',
+                }}
+              >
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5 }}>
+                  <Visibility color="primary" />
+                  <Box>
+                    <Typography variant="subtitle1" fontWeight={700}>
+                      Review AI Prompt & Generate Video
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Review the full AI prompt before generating your edited video
+                    </Typography>
+                  </Box>
+                </Box>
+
+                {loadingPromptPreview && (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1.5 }}>
+                    <CircularProgress size={18} />
+                    <Typography variant="body2" color="text.secondary">
+                      Building prompt preview...
+                    </Typography>
+                  </Box>
+                )}
+
+                <Button
+                  variant="contained"
+                  startIcon={<Visibility />}
+                  onClick={handlePreviewPrompt}
+                  fullWidth
+                  disabled={loadingPromptPreview || !transcriptionSegments || transcriptionSegments.length === 0}
+                  sx={{
+                    background: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)',
+                    '&:hover': {
+                      background: 'linear-gradient(135deg, #0d9488 0%, #0f766e 100%)',
+                    },
+                  }}
+                >
+                  {loadingPromptPreview ? 'Loading...' : 'Review AI Prompt \u2192'}
+                </Button>
+
+                {(!transcriptionSegments || transcriptionSegments.length === 0) && (
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1, textAlign: 'center' }}>
+                    Transcript with timestamps is required for auto-edit
+                  </Typography>
+                )}
+              </Card>
+            </>
+          )}
+
+          {skipAnalysis && (
+            <>
+              <Alert severity="success" sx={{ mb: 1 }}>
+                Your video and transcription have already been saved to the database.
+              </Alert>
+              <Alert severity="info">
+                Skipping AI analysis. You can analyze the video later from the files page.
+              </Alert>
+
+              {uploading && (
+                <Box sx={{ mt: 2 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
+                    <CircularProgress size={20} />
+                    <Typography variant="body2" color="text.secondary">
+                      Uploading video to Firebase...
+                    </Typography>
+                  </Box>
+                  <LinearProgress />
+                </Box>
+              )}
+            </>
+          )}
+        </Box>
+      );
+    }
+
+    // Step 5: Review AI Prompt & Generate
+    if (step === 'review-prompt') {
+      return (
+        <Box sx={{ py: 2 }}>
+          {error && (
+            <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
+              {error}
+            </Alert>
+          )}
+
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
+            <Box
+              sx={{
+                width: 48,
+                height: 48,
+                borderRadius: 1,
+                bgcolor: '#6366f1',
+                color: 'white',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Code />
+            </Box>
+            <Box sx={{ flexGrow: 1 }}>
+              <Typography variant="subtitle1" fontWeight={700}>
+                Review AI Prompt
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                This is the exact prompt that will be sent to the AI model
+              </Typography>
+            </Box>
+          </Box>
+
+          {promptPreview && (
+            <>
+              {/* Stats chips */}
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 2 }}>
+                <Chip
+                  size="small"
+                  label={`Program: ${promptPreview.programType}`}
+                  color="primary"
+                  variant="outlined"
+                />
+                <Chip
+                  size="small"
+                  label={`~${promptPreview.estimatedTokens.toLocaleString()} tokens`}
+                  color={promptPreview.estimatedTokens > 100000 ? 'error' : promptPreview.estimatedTokens > 50000 ? 'warning' : 'success'}
+                  variant="outlined"
+                />
+                <Chip
+                  size="small"
+                  label={`${promptPreview.segmentCount} segments`}
+                  variant="outlined"
+                />
+                {promptPreview.compressionLevel > 0 && (
+                  <Chip
+                    size="small"
+                    label={`Compression: L${promptPreview.compressionLevel}`}
+                    color="warning"
+                    variant="outlined"
+                  />
+                )}
+                {promptPreview.twoPassUsed && (
+                  <Chip
+                    size="small"
+                    label="Two-pass mode"
+                    color="info"
+                    variant="outlined"
+                  />
+                )}
+              </Box>
+
+              {promptPreview.compressionNote && (
+                <Alert severity="info" sx={{ mb: 2, fontSize: '0.75rem' }}>
+                  {promptPreview.compressionNote}
+                </Alert>
+              )}
+
+              {/* System Prompt */}
+              <Accordion sx={{ mb: 1 }}>
+                <AccordionSummary expandIcon={<ExpandMore />}>
+                  <Typography variant="subtitle2" fontWeight={600}>
+                    System Prompt
+                  </Typography>
+                </AccordionSummary>
+                <AccordionDetails>
+                  <Box
+                    sx={{
+                      p: 1.5,
+                      borderRadius: 1,
+                      bgcolor: 'grey.900',
+                      color: 'grey.100',
+                      fontFamily: 'monospace',
+                      fontSize: '0.75rem',
+                      lineHeight: 1.6,
+                      whiteSpace: 'pre-wrap',
+                      wordBreak: 'break-word',
+                      maxHeight: 200,
+                      overflow: 'auto',
+                    }}
+                  >
+                    {promptPreview.systemPrompt}
+                  </Box>
+                </AccordionDetails>
+              </Accordion>
+
+              {/* User Prompt (the big one) */}
+              <Accordion defaultExpanded sx={{ mb: 2 }}>
+                <AccordionSummary expandIcon={<ExpandMore />}>
+                  <Typography variant="subtitle2" fontWeight={600}>
+                    User Prompt (sent to AI)
+                  </Typography>
+                </AccordionSummary>
+                <AccordionDetails>
+                  <Box
+                    sx={{
+                      p: 1.5,
+                      borderRadius: 1,
+                      bgcolor: 'grey.900',
+                      color: 'grey.100',
+                      fontFamily: 'monospace',
+                      fontSize: '0.7rem',
+                      lineHeight: 1.5,
+                      whiteSpace: 'pre-wrap',
+                      wordBreak: 'break-word',
+                      maxHeight: 400,
+                      overflow: 'auto',
+                    }}
+                  >
+                    {promptPreview.userPrompt}
+                  </Box>
+                </AccordionDetails>
+              </Accordion>
+
+              {/* Auto-Edit Section */}
               <Divider sx={{ my: 2 }} />
               
               <Card
@@ -1397,12 +1679,12 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
                   <AutoFixHigh color={mergedVideo ? 'success' : 'primary'} />
                   <Box>
                     <Typography variant="subtitle1" fontWeight={700}>
-                      {mergedVideo ? '✅ Auto-Edited Video Ready' : '🎬 Generate Final Video'}
+                      {mergedVideo ? 'Auto-Edited Video Ready' : 'Generate Final Video'}
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
                       {mergedVideo
                         ? 'Your AI-edited video is ready for preview and download'
-                        : 'Let AI apply the recommended edits and produce a final video'}
+                        : 'Send the prompt above to generate your edited video'}
                     </Typography>
                   </Box>
                 </Box>
@@ -1514,7 +1796,7 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
                             >
                               <Chip
                                 size="small"
-                                label={`${formatTimestamp(clip.start)}–${formatTimestamp(clip.end)}`}
+                                label={`${formatTimestamp(clip.start)}\u2013${formatTimestamp(clip.end)}`}
                                 color={clip.type === 'highlight' ? 'warning' : 'default'}
                                 variant="outlined"
                                 sx={{ flexShrink: 0, fontFamily: 'monospace', fontSize: '0.7rem' }}
@@ -1553,11 +1835,10 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
                     startIcon={<AutoFixHigh />}
                     onClick={handleAutoEdit}
                     fullWidth
-                    disabled={!transcriptionSegments || transcriptionSegments.length === 0}
                     sx={{
-                      background: 'linear-gradient(135deg, #6366f1 0%, #ec4899 100%)',
+                      background: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)',
                       '&:hover': {
-                        background: 'linear-gradient(135deg, #4f46e5 0%, #d946ef 100%)',
+                        background: 'linear-gradient(135deg, #0d9488 0%, #0f766e 100%)',
                       },
                     }}
                   >
@@ -1577,36 +1858,7 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
                     Regenerate Auto-Edit
                   </Button>
                 )}
-
-                {!transcriptionSegments || transcriptionSegments.length === 0 ? (
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1, textAlign: 'center' }}>
-                    Transcript with timestamps is required for auto-edit
-                  </Typography>
-                ) : null}
               </Card>
-            </>
-          )}
-
-          {skipAnalysis && (
-            <>
-              <Alert severity="success" sx={{ mb: 1 }}>
-                Your video and transcription have already been saved to the database.
-              </Alert>
-              <Alert severity="info">
-                Skipping AI analysis. You can analyze the video later from the files page.
-              </Alert>
-
-              {uploading && (
-                <Box sx={{ mt: 2 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
-                    <CircularProgress size={20} />
-                    <Typography variant="body2" color="text.secondary">
-                      Uploading video to Firebase...
-                    </Typography>
-                  </Box>
-                  <LinearProgress />
-                </Box>
-              )}
             </>
           )}
         </Box>
@@ -1650,9 +1902,9 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
             onClick={handleStartUpload}
             variant="contained"
             sx={{
-              background: 'linear-gradient(135deg, #6366f1 0%, #ec4899 100%)',
+              background: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)',
               '&:hover': {
-                background: 'linear-gradient(135deg, #4f46e5 0%, #d946ef 100%)',
+                background: 'linear-gradient(135deg, #0d9488 0%, #0f766e 100%)',
               },
             }}
           >
@@ -1670,9 +1922,9 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
               onClick={() => setStep('transcribe')}
               variant="contained"
               sx={{
-                background: 'linear-gradient(135deg, #6366f1 0%, #ec4899 100%)',
+                background: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)',
                 '&:hover': {
-                  background: 'linear-gradient(135deg, #4f46e5 0%, #d946ef 100%)',
+                  background: 'linear-gradient(135deg, #0d9488 0%, #0f766e 100%)',
                 },
               }}
             >
@@ -1703,9 +1955,9 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
             variant="contained"
             disabled={transcribing}
             sx={{
-              background: 'linear-gradient(135deg, #6366f1 0%, #ec4899 100%)',
+              background: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)',
               '&:hover': {
-                background: 'linear-gradient(135deg, #4f46e5 0%, #d946ef 100%)',
+                background: 'linear-gradient(135deg, #0d9488 0%, #0f766e 100%)',
               },
             }}
           >
@@ -1735,9 +1987,9 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
               variant="contained"
               disabled={analyzing || !transcription || selectedFeatures.length === 0}
               sx={{
-                background: 'linear-gradient(135deg, #6366f1 0%, #ec4899 100%)',
+                background: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)',
                 '&:hover': {
-                  background: 'linear-gradient(135deg, #4f46e5 0%, #d946ef 100%)',
+                  background: 'linear-gradient(135deg, #0d9488 0%, #0f766e 100%)',
                 },
               }}
             >
@@ -1749,9 +2001,9 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
               variant="contained"
               disabled={uploading || autoEditing}
               sx={{
-                background: 'linear-gradient(135deg, #6366f1 0%, #ec4899 100%)',
+                background: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)',
                 '&:hover': {
-                  background: 'linear-gradient(135deg, #4f46e5 0%, #d946ef 100%)',
+                  background: 'linear-gradient(135deg, #0d9488 0%, #0f766e 100%)',
                 },
               }}
             >
@@ -1762,13 +2014,40 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
       );
     }
 
+    if (step === 'review-prompt') {
+      return (
+        <>
+          <Button
+            onClick={() => setStep('analyze')}
+            variant="outlined"
+            disabled={autoEditing}
+          >
+            Back to Analysis
+          </Button>
+          <Button
+            onClick={handleUploadVideo}
+            variant="contained"
+            disabled={uploading || autoEditing}
+            sx={{
+              background: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)',
+              '&:hover': {
+                background: 'linear-gradient(135deg, #0d9488 0%, #0f766e 100%)',
+              },
+            }}
+          >
+            {uploading ? 'Saving...' : (savedDocId ? 'Finish & Close' : 'Finish')}
+          </Button>
+        </>
+      );
+    }
+
   };
 
   return (
     <Dialog 
       open={open} 
       onClose={handleClose}
-      maxWidth="sm"
+      maxWidth={step === 'review-prompt' ? 'md' : 'sm'}
       fullWidth
       fullScreen={isMobile}
       PaperProps={{

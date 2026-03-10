@@ -301,7 +301,7 @@ export const VideoAnalysisReport: React.FC<VideoAnalysisReportProps> = ({
           <Button 
             variant="contained" 
             sx={{
-              background: 'linear-gradient(135deg, #6366f1 0%, #ec4899 100%)',
+              background: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)',
             }}
           >
             Apply Suggestions

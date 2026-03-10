@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useState, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
@@ -225,7 +225,7 @@ export default function GenerateClipsDialog({ open, onClose, file, projectId }: 
     setClipFeedback(new Map());
 
     try {
-      // ── Optional Step: Vision Analysis ──
+      // â”€â”€ Optional Step: Vision Analysis â”€â”€
       let enrichedSegments = undefined;
 
       if (useVisionAnalysis) {
@@ -270,7 +270,7 @@ export default function GenerateClipsDialog({ open, onClose, file, projectId }: 
       }
 
 
-      // ── Build feedback payload for iterative regeneration ──
+      // â”€â”€ Build feedback payload for iterative regeneration â”€â”€
       let clipFeedbackPayload = undefined;
       if (regenerationFeedback && regenerationFeedback.feedback.size > 0) {
         clipFeedbackPayload = {
@@ -284,7 +284,7 @@ export default function GenerateClipsDialog({ open, onClose, file, projectId }: 
       }
 
 
-      // ── Step 1: Ask the backend LLM to identify relevant segments ──
+      // â”€â”€ Step 1: Ask the backend LLM to identify relevant segments â”€â”€
       setProgress(
         useVisionAnalysis
           ? 'Analyzing with AI using transcript + visual signals...'
@@ -366,7 +366,7 @@ export default function GenerateClipsDialog({ open, onClose, file, projectId }: 
             console.error('Auto-merge failed:', err);
           }
         } else if (clipResults.length === 1) {
-          // Single clip — show it as the "merged" result directly
+          // Single clip â€” show it as the "merged" result directly
           setMergedVideo({
             blob: clipResults[0].blob,
             objectUrl: clipResults[0].objectUrl,
@@ -384,7 +384,7 @@ export default function GenerateClipsDialog({ open, onClose, file, projectId }: 
     }
   };
 
-  // ── Regenerate with feedback ──
+  // â”€â”€ Regenerate with feedback â”€â”€
   const handleRegenerateWithFeedback = () => {
     if (clipFeedback.size === 0 || clips.length === 0) return;
     const feedbackData = { clips: [...clips], feedback: new Map(clipFeedback) };
@@ -597,7 +597,7 @@ export default function GenerateClipsDialog({ open, onClose, file, projectId }: 
               fullWidth
               variant="outlined"
               size="small"
-              label="⏱ Duration Constraint (optional)"
+              label="â± Duration Constraint (optional)"
               placeholder="e.g., Summarize in 30 seconds, Keep under 2 minutes, Maximum 60 seconds of highlights..."
               value={durationConstraint}
               onChange={(e) => setDurationConstraint(e.target.value)}
@@ -679,11 +679,11 @@ export default function GenerateClipsDialog({ open, onClose, file, projectId }: 
                   label={
                     <Box>
                       <Typography variant="body2" fontWeight={600}>
-                        🔍 Vision Analysis
+                        ðŸ” Vision Analysis
                       </Typography>
                       <Typography variant="caption" color="text.secondary">
                         {cachedVisionData || file?.visionAnalysis
-                          ? '✓ Cached — uses visual signals (labels, objects, faces) for more accurate clips'
+                          ? 'âœ“ Cached â€” uses visual signals (labels, objects, faces) for more accurate clips'
                           : 'Analyzes video visuals for better clip accuracy (1-3 min, runs once per video)'}
                       </Typography>
                     </Box>
@@ -695,7 +695,7 @@ export default function GenerateClipsDialog({ open, onClose, file, projectId }: 
                     <Alert severity="info" variant="outlined" sx={{ py: 0.5 }}>
                       <Typography variant="caption">
                         {cachedVisionData || file?.visionAnalysis
-                          ? 'Vision data is cached. No extra wait time — clips will use both transcript and visual context.'
+                          ? 'Vision data is cached. No extra wait time â€” clips will use both transcript and visual context.'
                           : 'Google Cloud Video Intelligence will analyze scene boundaries, labels, objects, and faces. Results are cached for future use.'}
                       </Typography>
                     </Alert>
@@ -884,7 +884,7 @@ export default function GenerateClipsDialog({ open, onClose, file, projectId }: 
               )}
             </Alert>
 
-            {/* Merged Video — Primary Result */}
+            {/* Merged Video â€” Primary Result */}
             {mergedVideo && (
               <Card variant="outlined" sx={{ mb: 3, border: 2, borderColor: 'primary.main' }}>
                 <CardContent>
@@ -907,8 +907,8 @@ export default function GenerateClipsDialog({ open, onClose, file, projectId }: 
                     onClick={handleDownloadMerged}
                     size="large"
                     sx={{
-                      background: 'linear-gradient(135deg, #6366f1 0%, #ec4899 100%)',
-                      '&:hover': { background: 'linear-gradient(135deg, #4f46e5 0%, #d946ef 100%)' },
+                      background: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)',
+                      '&:hover': { background: 'linear-gradient(135deg, #0d9488 0%, #0f766e 100%)' },
                     }}
                   >
                     Download Video ({formatFileSize(mergedVideo.fileSize)})
@@ -970,7 +970,7 @@ export default function GenerateClipsDialog({ open, onClose, file, projectId }: 
                       </Box>
                       <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                         <Chip
-                          label={`${formatTime(clip.start)} → ${formatTime(clip.end)}`}
+                          label={`${formatTime(clip.start)} â†’ ${formatTime(clip.end)}`}
                           size="small"
                           color="primary"
                           variant="outlined"
@@ -1039,9 +1039,9 @@ export default function GenerateClipsDialog({ open, onClose, file, projectId }: 
                       startIcon={<Download />}
                       onClick={() => handleDownloadClip(clip)}
                       sx={{
-                        background: 'linear-gradient(135deg, #6366f1 0%, #ec4899 100%)',
+                        background: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)',
                         '&:hover': {
-                          background: 'linear-gradient(135deg, #4f46e5 0%, #d946ef 100%)',
+                          background: 'linear-gradient(135deg, #0d9488 0%, #0f766e 100%)',
                         },
                       }}
                     >
@@ -1101,7 +1101,7 @@ export default function GenerateClipsDialog({ open, onClose, file, projectId }: 
               {clipFeedback.size === 0 && (
                 <Alert severity="info" variant="outlined" sx={{ py: 0.25, width: '100%' }}>
                   <Typography variant="caption">
-                    👍👎 Rate clips with thumbs up/down, then click Regenerate to improve results with AI feedback
+                    ðŸ‘ðŸ‘Ž Rate clips with thumbs up/down, then click Regenerate to improve results with AI feedback
                   </Typography>
                 </Alert>
               )}
@@ -1139,9 +1139,9 @@ export default function GenerateClipsDialog({ open, onClose, file, projectId }: 
             disabled={!query.trim() || !hasSegments || loading}
             startIcon={<SmartToy />}
             sx={{
-              background: 'linear-gradient(135deg, #6366f1 0%, #ec4899 100%)',
+              background: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)',
               '&:hover': {
-                background: 'linear-gradient(135deg, #4f46e5 0%, #d946ef 100%)',
+                background: 'linear-gradient(135deg, #0d9488 0%, #0f766e 100%)',
               },
             }}
           >

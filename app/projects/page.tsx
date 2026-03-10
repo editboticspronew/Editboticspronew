@@ -105,7 +105,7 @@ export default function ProjectsPage() {
               onClick={() => setCreateDialogOpen(true)}
               sx={{ 
                 display: { xs: 'none', sm: 'inline-flex' },
-                background: 'linear-gradient(135deg, #6366f1 0%, #ec4899 100%)',
+                background: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)',
               }}
             >
               New Project
@@ -159,7 +159,7 @@ export default function ProjectsPage() {
                 startIcon={<Add />}
                 onClick={() => setCreateDialogOpen(true)}
                 sx={{ 
-                  background: 'linear-gradient(135deg, #6366f1 0%, #ec4899 100%)',
+                  background: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)',
                 }}
               >
                 Create Project
@@ -190,7 +190,7 @@ export default function ProjectsPage() {
                           width: 80,
                           height: 80,
                           borderRadius: 2,
-                          background: 'linear-gradient(135deg, #6366f1 0%, #ec4899 100%)',
+                          background: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
@@ -287,10 +287,11 @@ export default function ProjectsPage() {
             position: 'fixed',
             bottom: 24,
             right: 24,
-            background: 'linear-gradient(135deg, #6366f1 0%, #ec4899 100%)',
+            background: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)',
+            boxShadow: '0 8px 24px rgba(20, 184, 166, 0.4)',
             display: { sm: 'none' },
             '&:hover': {
-              background: 'linear-gradient(135deg, #4f46e5 0%, #d946ef 100%)',
+              background: 'linear-gradient(135deg, #0d9488 0%, #0f766e 100%)',
             },
           }}
         >

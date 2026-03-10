@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useState, useEffect } from 'react';
 import {
@@ -305,7 +305,7 @@ export const VideoExport: React.FC<VideoExportProps> = ({
           const anchorX = Math.round((text.x / 100) * videoWidth);
           const anchorY = Math.round((text.y / 100) * videoHeight);
 
-          // x and y accept FFmpeg expressions — text_w/text_h are computed at render time
+          // x and y accept FFmpeg expressions â€” text_w/text_h are computed at render time
           const xExpr = `(${anchorX}-text_w/2)`;
           const yExpr = `(${anchorY}-text_h/2)`;
 
@@ -402,9 +402,9 @@ export const VideoExport: React.FC<VideoExportProps> = ({
         onClick={handleExport}
         disabled={!loaded || exporting}
         sx={{
-          background: 'linear-gradient(135deg, #6366f1 0%, #ec4899 100%)',
+          background: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)',
           '&:hover': {
-            background: 'linear-gradient(135deg, #4f46e5 0%, #d946ef 100%)',
+            background: 'linear-gradient(135deg, #0d9488 0%, #0f766e 100%)',
           },
         }}
       >
@@ -483,9 +483,9 @@ export const VideoExport: React.FC<VideoExportProps> = ({
               onClick={handleDownload}
               variant="contained"
               sx={{
-                background: 'linear-gradient(135deg, #6366f1 0%, #ec4899 100%)',
+                background: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)',
                 '&:hover': {
-                  background: 'linear-gradient(135deg, #4f46e5 0%, #d946ef 100%)',
+                  background: 'linear-gradient(135deg, #0d9488 0%, #0f766e 100%)',
                 },
               }}
             >

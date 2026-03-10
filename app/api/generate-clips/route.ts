@@ -1,4 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
+import {
+  compressForTokenBudget,
+  estimateTokens,
+  chunkSegmentsForSummary,
+  buildChunkSummaryPrompt,
+  mergeChunkSummaries,
+} from '@/lib/ai/tokenManager';
 
 interface TranscriptSegment {
   text: string;
@@ -221,11 +228,17 @@ export async function POST(request: NextRequest) {
 
     const useMultimodal = Array.isArray(enrichedSegments) && enrichedSegments.length > 0;
 
+    // ── Estimate instruction overhead tokens (everything except segments data) ──
+    const instructionOverhead = estimateTokens(
+      [durationInstruction, keywordInstruction, redundancyInstruction,
+       silenceInstruction, hookInstruction, feedbackInstruction, userQuery].join('')
+    ) + 800; // base prompt template + formatting
+
     let llmPrompt: string;
 
     if (useMultimodal) {
       // ── Enhanced multimodal prompt with vision data ──
-      const enrichedForLLM = (enrichedSegments as LLMEnrichedSegment[]).map((seg) => ({
+      const rawEnriched = (enrichedSegments as LLMEnrichedSegment[]).map((seg) => ({
         index: seg.index,
         start: seg.start,
         end: seg.end,
@@ -236,11 +249,24 @@ export async function POST(request: NextRequest) {
         visualContext: seg.visualContext,
       }));
 
-      llmPrompt = `You are a video editor assistant with access to BOTH transcript text AND visual analysis data for each segment. Use both signals to identify the most relevant segments.
+      // Compress enriched segments if needed
+      const compressed = compressForTokenBudget(rawEnriched, {
+        model: 'gpt-4o-mini',
+        systemPromptTokens: instructionOverhead + 300,
+        scoreField: 'scores',
+      });
+
+      if (compressed.compressionLevel > 0) {
+        console.log(`   📊 Token compression (multimodal): Level ${compressed.compressionLevel} — ${compressed.note}`);
+      }
+
+      const enrichedForLLM = compressed.segments;
+
+      llmPrompt = `You are a video editor assistant and creative director with access to BOTH transcript text AND visual analysis data. Use both signals to identify the most relevant segments. Think like a skilled editor building a mini-story, not a search engine matching keywords.
 
 USER REQUEST: "${userQuery}"${durationInstruction}${keywordInstruction}${redundancyInstruction}${silenceInstruction}${hookInstruction}${feedbackInstruction}
 
-ENRICHED SEGMENTS (transcript + visual analysis):
+ENRICHED SEGMENTS (transcript + visual analysis)${compressed.compressionLevel > 0 ? ` [compressed: ${compressed.originalCount} total, showing ${compressed.segments.length}]` : ''}:
 ${JSON.stringify(enrichedForLLM, null, 2)}
 
 INSTRUCTIONS:
@@ -252,7 +278,9 @@ INSTRUCTIONS:
   • Product is visible (product_visible in visualContext)
   • A talking head is present when someone is explaining/reviewing (talking_head in visualContext)
 - Prefer segments with HIGH combined scores
-- Include surrounding context segments (intro/outro to the topic)
+- Think about narrative coherence: do the selected segments tell a mini-story when played together?
+- Prefer segments that contribute to a structure (hook → context → key point → conclusion) rather than random keyword matches
+- If multiple segments score equally, prefer the one with stronger visual or emotional impact
 - Be selective — only include segments that are clearly relevant and fit within the duration budget
 - Return ONLY a JSON array of objects with: index, start, end, text, relevance (brief reason)${targetDurationSeconds ? ', runningTotal (cumulative sum of dur values of all selected segments up to and including this one)' : ''}
 - If no segments match, return an empty array []
@@ -261,7 +289,7 @@ INSTRUCTIONS:
 RESPONSE (JSON array only):`;
     } else {
       // ── Standard transcript-only prompt ──
-      const segmentsForLLM = segments.map((seg: TranscriptSegment, i: number) => ({
+      const rawSegments = segments.map((seg: TranscriptSegment, i: number) => ({
         index: i,
         start: seg.start,
         end: seg.end,
@@ -269,16 +297,39 @@ RESPONSE (JSON array only):`;
         text: seg.text.trim(),
       }));
 
-      llmPrompt = `You are a video editor assistant. Given a list of transcription segments with timestamps, identify which segments are relevant to the user's request.
+      // Compress segments if needed for very long videos
+      const compressed = compressForTokenBudget(rawSegments, {
+        model: 'gpt-4o-mini',
+        systemPromptTokens: instructionOverhead + 200,
+      });
+
+      if (compressed.compressionLevel > 0) {
+        console.log(`   📊 Token compression (standard): Level ${compressed.compressionLevel} — ${compressed.note}`);
+      }
+
+      // Two-pass fallback for extremely large transcripts
+      let segmentsBlock: string;
+      if (compressed.needsTwoPass) {
+        console.log(`   🔄 Two-pass mode: Summarizing ${segments.length} segments before clip selection...`);
+        const twoPassSummary = await runClipsTwoPass(segments, userQuery, apiKey);
+        segmentsBlock = `CONDENSED VIDEO SUMMARY (original had ${segments.length} segments — summarized via two-pass):\n${twoPassSummary}`;
+      } else {
+        const segmentsForLLM = compressed.segments;
+        segmentsBlock = `TRANSCRIPTION SEGMENTS${compressed.compressionLevel > 0 ? ` [compressed: ${compressed.originalCount} total, showing ${compressed.segments.length}]` : ''}:\n${JSON.stringify(segmentsForLLM, null, 2)}`;
+      }
+
+      llmPrompt = `You are a video editor assistant and creative director. Given a list of transcription segments with timestamps, identify which segments are relevant to the user's request. Think like a skilled editor selecting the best moments for a compelling clip, not a search engine matching keywords.
 
 USER REQUEST: "${userQuery}"${durationInstruction}${keywordInstruction}${redundancyInstruction}${silenceInstruction}${hookInstruction}${feedbackInstruction}
 
-TRANSCRIPTION SEGMENTS:
-${JSON.stringify(segmentsForLLM, null, 2)}
+${segmentsBlock}
 
 INSTRUCTIONS:
 - Select segments that are most relevant to the user's request
-- Include segments that provide context (intro/outro to the topic)
+- Include segments that provide narrative context (intro/outro to the topic)
+- Prioritize segments that tell a coherent story when played in sequence
+- Prefer segments with stronger narrative moments, emotional impact, or viewer engagement over bland keyword matches
+- If the selected segments would feel disjointed when played together, add bridging context segments
 - Be selective — only include segments that are clearly relevant and fit within the duration budget
 - Return ONLY a JSON array of objects with: index, start, end, text, relevance (brief reason)${targetDurationSeconds ? ', runningTotal (cumulative sum of dur values of all selected segments up to and including this one)' : ''}
 - If no segments match, return an empty array []
@@ -287,7 +338,7 @@ INSTRUCTIONS:
 RESPONSE (JSON array only):`;
     }
 
-    console.log(`\n📝 ── Final LLM Prompt (${llmPrompt.length} chars) ──`);
+    console.log(`\n📝 ── Final LLM Prompt (${llmPrompt.length} chars, ~${estimateTokens(llmPrompt).toLocaleString()} tokens) ──`);
     console.log(llmPrompt);
     console.log(`📝 ── End of Prompt ──\n`);
 
@@ -299,8 +350,8 @@ RESPONSE (JSON array only):`;
     // ──────────────────────────────────────────────
 
     const systemMessage = useMultimodal
-      ? 'You are a precise video editing assistant with access to both transcript and visual analysis data. You MUST stay within the duration budget — track a running total of segment durations and stop once you reach the limit. You respond ONLY with valid JSON arrays. No markdown, no explanation, just the JSON array.'
-      : 'You are a precise video editing assistant. You MUST stay within the duration budget — track a running total of segment durations and stop once you reach the limit. You respond ONLY with valid JSON arrays. No markdown, no explanation, just the JSON array.';
+      ? 'You are a precise video editing assistant and creative director with access to both transcript and visual analysis data. Select segments that create a compelling narrative — think like an editor, not a search engine. You MUST stay within the duration budget. You respond ONLY with valid JSON arrays. No markdown, no explanation.'
+      : 'You are a precise video editing assistant and creative director. Select segments that create a compelling narrative — think like an editor, not a search engine. You MUST stay within the duration budget. You respond ONLY with valid JSON arrays. No markdown, no explanation.';
 
     const MAX_DURATION_RETRIES = 2;
     let identifiedSegments: IdentifiedSegment[] = [];
@@ -558,4 +609,89 @@ Return the reduced JSON array:`;
       { status: 500 }
     );
   }
+}
+
+// ─── Two-Pass Summarization for Very Large Transcripts ───────────
+
+/**
+ * When segments are too large for a single generate-clips call,
+ * split into chunks, summarize each chunk's strongest moments,
+ * then return a condensed representation for the main LLM call.
+ */
+async function runClipsTwoPass(
+  segments: TranscriptSegment[],
+  userQuery: string,
+  apiKey: string
+): Promise<string> {
+  const chunks = chunkSegmentsForSummary(
+    segments.map((s, i) => ({ index: i, start: s.start, end: s.end, text: s.text })),
+    50
+  );
+
+  console.log(`   📦 Split into ${chunks.length} chunks for two-pass summarization`);
+
+  const chunkResults: any[] = [];
+
+  for (const chunk of chunks) {
+    const summaryPrompt = buildChunkSummaryPrompt(chunk, userQuery);
+
+    try {
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages: [
+            { role: 'system', content: 'You are a video analysis assistant. Return ONLY valid JSON. No markdown.' },
+            { role: 'user', content: summaryPrompt },
+          ],
+          temperature: 0.2,
+          max_tokens: 1500,
+        }),
+      });
+
+      if (!response.ok) {
+        console.warn(`   ⚠️ Chunk ${chunk.chunkIndex} failed: ${response.status}`);
+        chunkResults.push({
+          section_summary: `Section ${chunk.startTime.toFixed(1)}s-${chunk.endTime.toFixed(1)}s`,
+          time_range: { start: chunk.startTime, end: chunk.endTime },
+          strong_moments: [],
+          overall_quality: 5,
+        });
+        continue;
+      }
+
+      const result = await response.json();
+      const content = result.choices?.[0]?.message?.content?.trim() || '{}';
+
+      try {
+        const cleaned = content.replace(/```json?\n?/g, '').replace(/```\n?/g, '').trim();
+        const parsed = JSON.parse(cleaned);
+        chunkResults.push(parsed);
+        console.log(`   ✅ Chunk ${chunk.chunkIndex}: ${parsed.strong_moments?.length || 0} strong moments`);
+      } catch {
+        chunkResults.push({
+          section_summary: `Section ${chunk.startTime.toFixed(1)}s-${chunk.endTime.toFixed(1)}s`,
+          time_range: { start: chunk.startTime, end: chunk.endTime },
+          strong_moments: [],
+          overall_quality: 5,
+        });
+      }
+    } catch (err: any) {
+      console.warn(`   ⚠️ Chunk ${chunk.chunkIndex} error: ${err.message}`);
+      chunkResults.push({
+        section_summary: `Section ${chunk.startTime.toFixed(1)}s-${chunk.endTime.toFixed(1)}s`,
+        time_range: { start: chunk.startTime, end: chunk.endTime },
+        strong_moments: [],
+        overall_quality: 5,
+      });
+    }
+  }
+
+  const merged = mergeChunkSummaries(chunkResults);
+  console.log(`   ✅ Two-pass complete: ~${estimateTokens(merged).toLocaleString()} tokens`);
+  return merged;
 }

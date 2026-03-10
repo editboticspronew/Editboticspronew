@@ -106,10 +106,12 @@ export default function RegisterPage() {
     >
       <Container maxWidth="sm">
         <Paper
-          elevation={3}
+          elevation={0}
           sx={{
             p: { xs: 3, sm: 4 },
-            borderRadius: 2,
+            borderRadius: 3,
+            border: 1,
+            borderColor: 'divider',
           }}
         >
           <Typography

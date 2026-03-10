@@ -226,9 +226,9 @@ export default function FilesPage() {
               onClick={() => router.push('/dashboard')}
               sx={{ 
                 display: { xs: 'none', sm: 'inline-flex' },
-                background: 'linear-gradient(135deg, #6366f1 0%, #ec4899 100%)',
+                background: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)',
                 '&:hover': {
-                  background: 'linear-gradient(135deg, #4f46e5 0%, #d946ef 100%)',
+                  background: 'linear-gradient(135deg, #0d9488 0%, #0f766e 100%)',
                 },
               }}
             >
@@ -319,7 +319,7 @@ export default function FilesPage() {
                 variant="contained"
                 onClick={() => router.push('/dashboard')}
                 sx={{
-                  background: 'linear-gradient(135deg, #6366f1 0%, #ec4899 100%)',
+                  background: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)',
                 }}
               >
                 Go to Projects

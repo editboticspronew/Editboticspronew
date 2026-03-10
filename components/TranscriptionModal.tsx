@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useState } from 'react';
 import {
@@ -99,7 +99,7 @@ export default function TranscriptionModal({ open, onClose, audioFile, onSaveTra
         );
       }
 
-      console.log('🎤 Transcribing via Google Cloud:', audioFile.storagePath);
+      console.log('ðŸŽ¤ Transcribing via Google Cloud:', audioFile.storagePath);
 
       // Transcribe using Google Cloud Video Intelligence
       const result = await transcribeVideo(audioFile.storagePath, {
@@ -221,7 +221,7 @@ export default function TranscriptionModal({ open, onClose, audioFile, onSaveTra
           {transcription && (
             <>
               <Typography variant="h6" fontWeight={700} gutterBottom sx={{ color: 'success.main' }}>
-                ✓ Transcription Complete
+                âœ“ Transcription Complete
               </Typography>
               <Paper
                 variant="outlined"
@@ -271,7 +271,7 @@ export default function TranscriptionModal({ open, onClose, audioFile, onSaveTra
                 Select the target language and click "Transcribe" to generate the transcription.
               </Alert>
               <Alert severity="info" sx={{ mt: 1 }}>
-                <strong>Note:</strong> Transcription runs via Google Cloud Video Intelligence directly on the video file — no audio extraction needed.
+                <strong>Note:</strong> Transcription runs via Google Cloud Video Intelligence directly on the video file â€” no audio extraction needed.
               </Alert>
             </>
           )}
@@ -291,9 +291,9 @@ export default function TranscriptionModal({ open, onClose, audioFile, onSaveTra
             disabled={loading || saving || uploading}
             startIcon={loading ? <CircularProgress size={16} /> : <TranslateIcon />}
             sx={{
-              background: 'linear-gradient(135deg, #6366f1 0%, #ec4899 100%)',
+              background: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)',
               '&:hover': {
-                background: 'linear-gradient(135deg, #4f46e5 0%, #d946ef 100%)',
+                background: 'linear-gradient(135deg, #0d9488 0%, #0f766e 100%)',
               },
             }}
           >
@@ -307,9 +307,9 @@ export default function TranscriptionModal({ open, onClose, audioFile, onSaveTra
             }}
             variant="contained"
             sx={{
-              background: 'linear-gradient(135deg, #6366f1 0%, #ec4899 100%)',
+              background: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)',
               '&:hover': {
-                background: 'linear-gradient(135deg, #4f46e5 0%, #d946ef 100%)',
+                background: 'linear-gradient(135deg, #0d9488 0%, #0f766e 100%)',
               },
             }}
           >

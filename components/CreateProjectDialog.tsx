@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useState } from 'react';
 import {
@@ -30,7 +30,7 @@ interface CreateProjectDialogProps {
   onClose: () => void;
 }
 
-const thumbnailEmojis = ['🎬', '🎥', '📹', '🎞️', '📽️', '🌴', '🏖️', '🌆', '🌃', '🎨', '🎭', '🎪', '🎸', '🎤', '🎧', '📚', '✨', '🔥', '💎', '🚀'];
+const thumbnailEmojis = ['ðŸŽ¬', 'ðŸŽ¥', 'ðŸ“¹', 'ðŸŽžï¸', 'ðŸ“½ï¸', 'ðŸŒ´', 'ðŸ–ï¸', 'ðŸŒ†', 'ðŸŒƒ', 'ðŸŽ¨', 'ðŸŽ­', 'ðŸŽª', 'ðŸŽ¸', 'ðŸŽ¤', 'ðŸŽ§', 'ðŸ“š', 'âœ¨', 'ðŸ”¥', 'ðŸ’Ž', 'ðŸš€'];
 
 export function CreateProjectDialog({ open, onClose }: CreateProjectDialogProps) {
   const dispatch = useAppDispatch();
@@ -43,7 +43,7 @@ export function CreateProjectDialog({ open, onClose }: CreateProjectDialogProps)
   const [formData, setFormData] = useState({
     title: '',
     description: '',
-    thumbnail: '🎬',
+    thumbnail: 'ðŸŽ¬',
     tags: [] as string[],
   });
   const [tagInput, setTagInput] = useState('');
@@ -92,7 +92,7 @@ export function CreateProjectDialog({ open, onClose }: CreateProjectDialogProps)
     setFormData({
       title: '',
       description: '',
-      thumbnail: '🎬',
+      thumbnail: 'ðŸŽ¬',
       tags: [],
     });
     setTagInput('');
@@ -243,7 +243,7 @@ export function CreateProjectDialog({ open, onClose }: CreateProjectDialogProps)
           variant="contained"
           disabled={!formData.title.trim() || loading}
           sx={{
-            background: 'linear-gradient(135deg, #6366f1 0%, #ec4899 100%)',
+            background: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)',
             minWidth: 120,
           }}
         >

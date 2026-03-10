@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useState } from 'react';
 import {
@@ -108,7 +108,7 @@ const templates: ProjectTemplate[] = [
   },
 ];
 
-const thumbnailEmojis = ['🎬', '🎥', '📹', '🎞️', '📽️', '🌴', '🏖️', '🌆', '🌃', '🎨', '🎭', '🎪', '🎸', '🎤', '🎧', '📚', '✨', '🔥', '💎', '🚀'];
+const thumbnailEmojis = ['ðŸŽ¬', 'ðŸŽ¥', 'ðŸ“¹', 'ðŸŽžï¸', 'ðŸ“½ï¸', 'ðŸŒ´', 'ðŸ–ï¸', 'ðŸŒ†', 'ðŸŒƒ', 'ðŸŽ¨', 'ðŸŽ­', 'ðŸŽª', 'ðŸŽ¸', 'ðŸŽ¤', 'ðŸŽ§', 'ðŸ“š', 'âœ¨', 'ðŸ”¥', 'ðŸ’Ž', 'ðŸš€'];
 
 export default function CreateProjectWizard({ open, onClose }: CreateProjectWizardProps) {
   const dispatch = useAppDispatch();
@@ -126,7 +126,7 @@ export default function CreateProjectWizard({ open, onClose }: CreateProjectWiza
   const [formData, setFormData] = useState({
     title: '',
     description: '',
-    thumbnail: '🎬',
+    thumbnail: 'ðŸŽ¬',
     tags: [] as string[],
     template: '' as string,
   });
@@ -152,7 +152,7 @@ export default function CreateProjectWizard({ open, onClose }: CreateProjectWiza
     setFormData({
       title: '',
       description: '',
-      thumbnail: '🎬',
+      thumbnail: 'ðŸŽ¬',
       tags: [],
       template: '',
     });
@@ -296,7 +296,7 @@ export default function CreateProjectWizard({ open, onClose }: CreateProjectWiza
                   border: 2,
                   borderColor: projectType === 'assisted' ? 'primary.main' : 'divider',
                   background: projectType === 'assisted' 
-                    ? 'linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(236, 72, 153, 0.1) 100%)'
+                    ? 'linear-gradient(135deg, rgba(20, 184, 166, 0.1) 0%, rgba(13, 148, 136, 0.1) 100%)'
                     : 'transparent',
                   transition: 'all 0.3s',
                   height: '100%',
@@ -860,7 +860,7 @@ export default function CreateProjectWizard({ open, onClose }: CreateProjectWiza
             endIcon={<ArrowForward />}
             disabled={isNextDisabled() || loading}
             sx={{
-              background: 'linear-gradient(135deg, #6366f1 0%, #ec4899 100%)',
+              background: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)',
             }}
           >
             Next
@@ -871,7 +871,7 @@ export default function CreateProjectWizard({ open, onClose }: CreateProjectWiza
             variant="contained"
             disabled={loading || uploadingFiles || !formData.title.trim()}
             sx={{
-              background: 'linear-gradient(135deg, #6366f1 0%, #ec4899 100%)',
+              background: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)',
             }}
           >
             {loading
