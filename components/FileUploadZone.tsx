@@ -30,6 +30,7 @@ import {
   ContentCut,
   PlayArrow,
   InsertDriveFile,
+  Download,
 } from '@mui/icons-material';
 import { useDropzone } from 'react-dropzone';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
@@ -37,6 +38,9 @@ import { uploadProjectFile, deleteProjectFile, fetchProjectFiles } from '@/store
 import TranscriptionModal from './TranscriptionModal';
 import AddVideoDialog from './AddVideoDialog';
 import GenerateClipsDialog from './GenerateClipsDialog';
+import VideoPlayer from './VideoPlayer';
+import dynamic from 'next/dynamic';
+const ReactPlayer = dynamic(() => import('react-player'), { ssr: false });
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase/init';
 
@@ -75,6 +79,9 @@ export default function FileUploadZone({ projectId, userId, acceptedTypes = 'all
     videoType?: string;
     visionAnalysis?: any;
   } | null>(null);
+
+  // Video/audio preview
+  const [previewFile, setPreviewFile] = useState<{ name: string; url: string; type: 'video' | 'audio' } | null>(null);
 
   const projectFiles = files.filter((f) => f.projectId === projectId);
 
@@ -330,7 +337,7 @@ export default function FileUploadZone({ projectId, userId, acceptedTypes = 'all
               const hasTimestampedTranscription = file.transcriptionSegments && file.transcriptionSegments.length > 0;
               const needsTranscription = (file.type === 'audio' || file.type === 'video') &&
                 (!file.transcription || !hasTimestampedTranscription);
-              const canGenerateClips = file.type === 'video' && file.videoType === 'long-short' && file.transcription;
+              const canGenerateClips = file.type === 'video' && file.transcription;
 
               return (
                 <Box
@@ -384,6 +391,11 @@ export default function FileUploadZone({ projectId, userId, acceptedTypes = 'all
                     {(file.type === 'video' || file.type === 'audio') && (
                       <Box
                         className="file-hover-overlay"
+                        onClick={() => {
+                          if (file.url) {
+                            setPreviewFile({ name: file.name, url: file.url, type: file.type as 'video' | 'audio' });
+                          }
+                        }}
                         sx={{
                           position: 'absolute',
                           inset: 0,
@@ -393,6 +405,7 @@ export default function FileUploadZone({ projectId, userId, acceptedTypes = 'all
                           alignItems: 'center',
                           justifyContent: 'center',
                           opacity: 0,
+                          cursor: 'pointer',
                           transition: 'opacity 0.2s',
                         }}
                       >
@@ -605,6 +618,26 @@ export default function FileUploadZone({ projectId, userId, acceptedTypes = 'all
 
                     <Box sx={{ flexGrow: 1 }} />
 
+                    {/* Download */}
+                    {file.url && (
+                      <Tooltip title="Download">
+                        <IconButton
+                          size="small"
+                          component="a"
+                          href={file.url}
+                          download={file.name}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          sx={{
+                            color: isDark ? alpha('#3b82f6', 0.7) : '#3b82f6',
+                            '&:hover': { bgcolor: alpha('#3b82f6', 0.1) },
+                          }}
+                        >
+                          <Download sx={{ fontSize: 17 }} />
+                        </IconButton>
+                      </Tooltip>
+                    )}
+
                     {/* Delete */}
                     <Tooltip title="Delete">
                       <IconButton
@@ -724,6 +757,71 @@ export default function FileUploadZone({ projectId, userId, acceptedTypes = 'all
         file={clipGenerationFile}
         projectId={projectId}
       />
+
+      {/* Video/Audio Preview Dialog */}
+      <Dialog
+        open={!!previewFile}
+        onClose={() => setPreviewFile(null)}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 2, overflow: 'hidden' } }}
+      >
+        {previewFile && (
+          <>
+            <DialogTitle sx={{ pb: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0, flex: 1 }}>
+                <PlayArrow color="primary" />
+                <Typography variant="h6" fontWeight={700} noWrap>
+                  {previewFile.name}
+                </Typography>
+              </Box>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <Tooltip title="Download">
+                  <IconButton
+                    component="a"
+                    href={previewFile.url}
+                    download={previewFile.name}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    size="small"
+                  >
+                    <Download />
+                  </IconButton>
+                </Tooltip>
+                <IconButton onClick={() => setPreviewFile(null)} size="small">
+                  <Close />
+                </IconButton>
+              </Box>
+            </DialogTitle>
+            <Divider />
+            <DialogContent sx={{ p: 0, bgcolor: '#000' }}>
+              {previewFile.type === 'video' ? (
+                <VideoPlayer
+                  url={previewFile.url}
+                  maxHeight="70vh"
+                  borderRadius={0}
+                  compact={false}
+                />
+              ) : (
+                <Box sx={{ p: 3 }}>
+                  {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                  {React.createElement(ReactPlayer as any, {
+                    url: previewFile.url,
+                    controls: true,
+                    width: '100%',
+                    height: 50,
+                    config: {
+                      file: {
+                        forceAudio: true,
+                      },
+                    },
+                  })}
+                </Box>
+              )}
+            </DialogContent>
+          </>
+        )}
+      </Dialog>
     </Box>
   );
 }

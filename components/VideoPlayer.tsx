@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import ReactPlayer from 'react-player';
 import {
   Box,
   IconButton,
@@ -174,6 +173,16 @@ export default function VideoPlayer({
     scheduleHide();
   };
 
+  // Sync play/pause to video element
+  useEffect(() => {
+    if (!videoRef.current) return;
+    if (playing) {
+      videoRef.current.play().catch(() => {});
+    } else {
+      videoRef.current.pause();
+    }
+  }, [playing]);
+
   // Sync volume to video element
   useEffect(() => {
     if (videoRef.current) {
@@ -215,16 +224,15 @@ export default function VideoPlayer({
           cursor: 'pointer',
         }}
       >
-        <ReactPlayer
+        <video
           ref={videoRef}
           src={url}
-          playing={playing}
           poster={poster || undefined}
           playsInline
           onTimeUpdate={handleVideoTimeUpdate}
           onLoadedMetadata={handleLoadedMetadata}
           onEnded={() => setPlaying(false)}
-          style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0 }}
+          style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, objectFit: 'contain' }}
         />
       </Box>
 

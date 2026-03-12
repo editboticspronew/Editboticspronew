@@ -28,6 +28,8 @@ import {
   Checkbox,
   FormControlLabel,
   FormGroup,
+  Radio,
+  RadioGroup,
 } from '@mui/material';
 import {
   Close,
@@ -51,11 +53,14 @@ import {
   AutoStories,
   YouTube,
   OndemandVideo,
+  HighQuality,
+  Compress,
 } from '@mui/icons-material';
 import { TranscriptSegment } from '../utils/audioTranscription';
 import { analyzeVideo, getProviderDisplayName, isProviderConfigured } from '@/lib/ai';
 import { useAppDispatch } from '@/store/hooks';
 import { saveProjectFileMetadata, updateProjectFileMetadata } from '@/store/filesSlice';
+import type { VideoResolution, QualityOption, TranscodeProgress } from '@/lib/video/videoQuality';
 
 interface AddVideoDialogProps {
   open: boolean;
@@ -161,6 +166,13 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
   } | null>(null);
   const [loadingPromptPreview, setLoadingPromptPreview] = useState(false);
 
+  // Video quality / downscale state
+  const [videoResolution, setVideoResolution] = useState<VideoResolution | null>(null);
+  const [qualityOptions, setQualityOptions] = useState<QualityOption[]>([]);
+  const [selectedQuality, setSelectedQuality] = useState<string>('original'); // 'original' | '1080' | '720' | '480'
+  const [transcoding, setTranscoding] = useState(false);
+  const [transcodeProgress, setTranscodeProgress] = useState<TranscodeProgress | null>(null);
+
   // When preSelectedFile is provided, initialize selectedFile
   React.useEffect(() => {
     if (preSelectedFile && !selectedFile) {
@@ -197,6 +209,11 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
         setAutoEditError('');
         setPromptPreview(null);
         setLoadingPromptPreview(false);
+        setVideoResolution(null);
+        setQualityOptions([]);
+        setSelectedQuality('original');
+        setTranscoding(false);
+        setTranscodeProgress(null);
         if (mergedVideo) {
           try { URL.revokeObjectURL(mergedVideo.objectUrl); } catch { /* ignore */ }
         }
@@ -227,6 +244,11 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
       setAutoEditClips([]);
       setAutoEditStats(null);
       setAutoEditError('');
+      setVideoResolution(null);
+      setQualityOptions([]);
+      setSelectedQuality('original');
+      setTranscoding(false);
+      setTranscodeProgress(null);
       if (mergedVideo) {
         try { URL.revokeObjectURL(mergedVideo.objectUrl); } catch { /* ignore */ }
       }
@@ -259,6 +281,21 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
 
     setSelectedFile(file);
     setError('');
+
+    // Detect video resolution and compute downscale options
+    try {
+      const { detectVideoResolution, getDownscaleOptions } = await import('@/lib/video/videoQuality');
+      const res = await detectVideoResolution(file);
+      setVideoResolution(res);
+      setQualityOptions(getDownscaleOptions(res.height));
+      setSelectedQuality('original');
+    } catch (err) {
+      console.warn('Could not detect video resolution:', err);
+      setVideoResolution(null);
+      setQualityOptions([]);
+      setSelectedQuality('original');
+    }
+
     // Show selected file, don't upload yet
     setStep('selected');
   };
@@ -271,9 +308,38 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
     setUploading(true);
 
     try {
+      let fileToUpload: File = selectedFile;
+
+      // If user chose a lower quality, transcode first
+      if (selectedQuality !== 'original') {
+        const targetHeight = parseInt(selectedQuality, 10);
+        setTranscoding(true);
+        setTranscodeProgress({ stage: 'loading', message: 'Loading video converter...' });
+
+        try {
+          const { transcodeVideo } = await import('@/lib/video/videoQuality');
+          const result = await transcodeVideo(fileToUpload, targetHeight, (p) => {
+            setTranscodeProgress(p);
+          });
+
+          // Create a new File from the transcoded Blob so upload utils work
+          fileToUpload = new File([result.blob], result.fileName, { type: 'video/mp4' });
+          console.log(
+            `✅ Transcoded: ${(result.originalSize / 1024 / 1024).toFixed(1)} MB → ${(result.newSize / 1024 / 1024).toFixed(1)} MB (${targetHeight}p)`
+          );
+        } catch (transcodeErr: any) {
+          console.error('Transcode failed:', transcodeErr);
+          setError(`Video conversion failed: ${transcodeErr.message}. Uploading original instead.`);
+          // Fall through — upload original file
+        } finally {
+          setTranscoding(false);
+          setTranscodeProgress(null);
+        }
+      }
+
       // Upload to Firebase Storage
       const { uploadVideoToFirebase } = await import('@/utils/fileUpload');
-      const result = await uploadVideoToFirebase(selectedFile, selectedType);
+      const result = await uploadVideoToFirebase(fileToUpload, selectedType);
       
       setFirebaseUrl(result.url);
       setStoragePath(result.storagePath);
@@ -281,14 +347,15 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
       setUploading(false);
       
       // Save initial metadata to database right after upload
+      // Use fileToUpload (may be transcoded) for accurate name/size
       try {
         const savedFile = await dispatch(
           saveProjectFileMetadata({
             projectId,
             userId,
-            name: selectedFile.name,
+            name: fileToUpload.name,
             type: 'video',
-            size: selectedFile.size,
+            size: fileToUpload.size,
             url: result.url,
             storagePath: result.storagePath,
             videoType: selectedType,
@@ -754,7 +821,7 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
       );
     }
 
-    // Step 2.5: File Selected - Show details and upload button
+    // Step 2.5: File Selected - Show details, quality options, and upload button
     if (step === 'selected') {
       const selectedTypeData = videoTypes.find((t) => t.id === selectedType);
 
@@ -799,14 +866,85 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
                   {selectedFile?.name}
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
-                  {selectedFile && `${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB â€¢ ${selectedTypeData?.name}`}
+                  {selectedFile && `${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB • ${selectedTypeData?.name}`}
+                  {videoResolution && ` • ${videoResolution.width}×${videoResolution.height} (${videoResolution.label})`}
                 </Typography>
               </Box>
+              {videoResolution && (
+                <Chip
+                  icon={<HighQuality />}
+                  label={videoResolution.label}
+                  size="small"
+                  color="primary"
+                  variant="outlined"
+                />
+              )}
             </Box>
           </Card>
 
+          {/* Quality Options — only shown when downscale is possible */}
+          {qualityOptions.length > 0 && (
+            <Card variant="outlined" sx={{ p: 2, mb: 2 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+                <Compress sx={{ fontSize: 20, color: 'primary.main' }} />
+                <Typography variant="subtitle2" fontWeight={700}>
+                  Reduce Video Quality (Optional)
+                </Typography>
+              </Box>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
+                Lower quality = smaller file size = faster upload. The original video is not modified.
+              </Typography>
+
+              <RadioGroup
+                value={selectedQuality}
+                onChange={(e) => setSelectedQuality(e.target.value)}
+              >
+                <FormControlLabel
+                  value="original"
+                  control={<Radio size="small" />}
+                  label={
+                    <Box>
+                      <Typography variant="body2" fontWeight={600}>
+                        Original Quality ({videoResolution?.label})
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {selectedFile && `${(selectedFile.size / (1024 * 1024)).toFixed(1)} MB — no conversion needed`}
+                      </Typography>
+                    </Box>
+                  }
+                  sx={{ alignItems: 'flex-start', mb: 0.5 }}
+                />
+                {qualityOptions.map((opt) => (
+                  <FormControlLabel
+                    key={opt.height}
+                    value={String(opt.height)}
+                    control={<Radio size="small" />}
+                    label={
+                      <Box>
+                        <Typography variant="body2" fontWeight={600}>
+                          {opt.label}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {opt.description}
+                        </Typography>
+                      </Box>
+                    }
+                    sx={{ alignItems: 'flex-start', mb: 0.5 }}
+                  />
+                ))}
+              </RadioGroup>
+
+              {selectedQuality !== 'original' && (
+                <Alert severity="warning" sx={{ mt: 1.5 }} icon={<Compress fontSize="small" />}>
+                  Video will be converted to <strong>{selectedQuality}p</strong> before uploading.
+                  Conversion runs in-browser and speed depends on video length — a 1-minute video takes ~10-30 seconds, a 10-minute video may take 2-5 minutes.
+                </Alert>
+              )}
+            </Card>
+          )}
+
           <Alert severity="info">
-            Click "Upload to Firebase" to store your video in cloud storage. This allows both AI providers to access it for analysis.
+            Click &quot;Upload to Firebase&quot; to store your video in cloud storage. This allows both AI providers to access it for analysis.
           </Alert>
         </Box>
       );
@@ -849,10 +987,20 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
                   <CircularProgress size={20} />
                   <Typography variant="body2" color="text.secondary">
-                    Uploading video to cloud storage...
+                    {transcoding && transcodeProgress
+                      ? transcodeProgress.message
+                      : 'Uploading video to cloud storage...'}
                   </Typography>
                 </Box>
-                <LinearProgress />
+                <LinearProgress
+                  variant={transcoding && transcodeProgress?.percent ? 'determinate' : 'indeterminate'}
+                  value={transcoding && transcodeProgress?.percent ? transcodeProgress.percent : undefined}
+                />
+                {transcoding && transcodeProgress?.percent != null && (
+                  <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block', textAlign: 'right' }}>
+                    {transcodeProgress.percent}%
+                  </Typography>
+                )}
               </>
             ) : (
               <Alert severity="success" sx={{ mb: 2 }}>
@@ -1906,6 +2054,9 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
             onClick={() => {
               setStep('upload');
               setSelectedFile(null);
+              setVideoResolution(null);
+              setQualityOptions([]);
+              setSelectedQuality('original');
             }}
             variant="outlined"
           >
@@ -1914,6 +2065,7 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
           <Button
             onClick={handleStartUpload}
             variant="contained"
+            startIcon={selectedQuality !== 'original' ? <Compress /> : undefined}
             sx={{
               background: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)',
               '&:hover': {
@@ -1921,7 +2073,9 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
               },
             }}
           >
-            Upload to Firebase
+            {selectedQuality !== 'original'
+              ? `Convert to ${selectedQuality}p & Upload`
+              : 'Upload to Firebase'}
           </Button>
         </>
       );
