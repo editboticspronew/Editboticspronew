@@ -346,6 +346,22 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
       setGsPath(result.gsPath);
       setUploading(false);
       
+      // Extract video duration from the file
+      let videoDuration: number | undefined;
+      try {
+        videoDuration = await new Promise<number>((resolve) => {
+          const vid = document.createElement('video');
+          vid.preload = 'metadata';
+          vid.onloadedmetadata = () => {
+            resolve(isFinite(vid.duration) ? vid.duration : 0);
+            URL.revokeObjectURL(vid.src);
+          };
+          vid.onerror = () => { resolve(0); URL.revokeObjectURL(vid.src); };
+          vid.src = URL.createObjectURL(fileToUpload);
+        });
+        if (!videoDuration || videoDuration <= 0) videoDuration = undefined;
+      } catch { videoDuration = undefined; }
+
       // Save initial metadata to database right after upload
       // Use fileToUpload (may be transcoded) for accurate name/size
       try {
@@ -359,6 +375,7 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
             url: result.url,
             storagePath: result.storagePath,
             videoType: selectedType,
+            duration: videoDuration,
           })
         ).unwrap();
         setSavedDocId(savedFile.id);

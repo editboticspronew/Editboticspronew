@@ -34,6 +34,12 @@ interface Clip {
   duration: number;
   trimStart: number;
   trimEnd: number;
+  // Canvas transform (for image clips – position & size on canvas)
+  canvasX?: number;        // x position as % of canvas (0-100)
+  canvasY?: number;        // y position as % of canvas (0-100)
+  canvasWidth?: number;    // width as % of canvas (0-100)
+  canvasHeight?: number;   // height as % of canvas (0-100)
+  canvasRotation?: number; // degrees
 }
 
 interface Track {
@@ -222,9 +228,9 @@ export const VideoExport: React.FC<VideoExportProps> = ({
         }
       }
 
-      // Process image clips
-      const imageTrack = tracks.find(t => t.type === 'image');
-      if (imageTrack && imageTrack.clips.length > 0) {
+      // Process image clips (supports all image tracks)
+      const imageTracks = tracks.filter(t => t.type === 'image');
+      for (const imageTrack of imageTracks) {
         for (const clip of imageTrack.clips) {
           try {
             const blob = await downloadFile(clip.fileUrl, clip.storagePath);
@@ -236,15 +242,36 @@ export const VideoExport: React.FC<VideoExportProps> = ({
             inputs.push('-loop', '1', '-t', clip.duration.toFixed(3), '-i', `input${clipIndex}.${ext}`);
 
             const visualLabel = `visual${clipIndex}`;
-            
+
+            // If the user positioned/resized the image on the canvas, honour that;
+            // otherwise fall back to full-frame 1920×1080.
+            const hasCanvasTransform =
+              clip.canvasX !== undefined || clip.canvasY !== undefined ||
+              clip.canvasWidth !== undefined || clip.canvasHeight !== undefined;
+
+            const targetW = hasCanvasTransform && clip.canvasWidth !== undefined
+              ? Math.round((clip.canvasWidth / 100) * 1920)
+              : 1920;
+            const targetH = hasCanvasTransform && clip.canvasHeight !== undefined
+              ? Math.round((clip.canvasHeight / 100) * 1080)
+              : 1080;
+            const posX = hasCanvasTransform && clip.canvasX !== undefined
+              ? Math.round((clip.canvasX / 100) * 1920)
+              : 0;
+            const posY = hasCanvasTransform && clip.canvasY !== undefined
+              ? Math.round((clip.canvasY / 100) * 1080)
+              : 0;
+
+            // Scale image, force even dimensions (required by libx264), then set timing
+            const scaleExpr = `scale=${targetW - targetW % 2}:${targetH - targetH % 2}:force_original_aspect_ratio=decrease,pad=${targetW - targetW % 2}:${targetH - targetH % 2}:(ow-iw)/2:(oh-ih)/2:color=black@0`;
             filters.push(
-              `[${clipIndex}:v]scale=1920:1080,setpts=PTS+${clip.startTime.toFixed(3)}/TB[${visualLabel}]`
+              `[${clipIndex}:v]${scaleExpr},setpts=PTS+${clip.startTime.toFixed(3)}/TB[${visualLabel}]`
             );
 
             overlays.push({
               label: visualLabel,
-              x: 0,
-              y: 0,
+              x: posX,
+              y: posY,
               start: clip.startTime.toFixed(3),
               end: (clip.startTime + clip.duration).toFixed(3),
             });

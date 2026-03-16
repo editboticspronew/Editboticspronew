@@ -150,6 +150,25 @@ export const uploadProjectFile = createAsyncThunk(
         updatedAt: serverTimestamp(),
       };
 
+      // Extract duration for video/audio files
+      if (type === 'video' || type === 'audio') {
+        try {
+          const mediaDuration = await new Promise<number>((resolve) => {
+            const el = type === 'video'
+              ? document.createElement('video')
+              : document.createElement('audio');
+            el.preload = 'metadata';
+            el.onloadedmetadata = () => {
+              resolve(isFinite(el.duration) ? el.duration : 0);
+              URL.revokeObjectURL(el.src);
+            };
+            el.onerror = () => { resolve(0); URL.revokeObjectURL(el.src); };
+            el.src = URL.createObjectURL(file);
+          });
+          if (mediaDuration > 0) fileData.duration = mediaDuration;
+        } catch { /* ignore duration extraction errors */ }
+      }
+
       // Add optional metadata
       if (transcription) fileData.transcription = transcription;
       if (videoType) fileData.videoType = videoType;
@@ -170,6 +189,7 @@ export const uploadProjectFile = createAsyncThunk(
         updatedAt: new Date(),
         transcription,
         videoType,
+        duration: fileData.duration,
       } as ProjectFile;
     } catch (error: any) {
       return rejectWithValue(error.message);
@@ -195,6 +215,7 @@ export const saveProjectFileMetadata = createAsyncThunk(
       transcription,
       videoType,
       aiAnalysis,
+      duration,
     }: {
       projectId: string;
       userId: string;
@@ -206,6 +227,7 @@ export const saveProjectFileMetadata = createAsyncThunk(
       transcription?: string;
       videoType?: string;
       aiAnalysis?: any;
+      duration?: number;
     },
     { rejectWithValue }
   ) => {
@@ -228,6 +250,7 @@ export const saveProjectFileMetadata = createAsyncThunk(
       if (transcription) fileData.transcription = transcription;
       if (videoType) fileData.videoType = videoType;
       if (aiAnalysis) fileData.aiAnalysis = aiAnalysis;
+      if (duration != null) fileData.duration = duration;
 
       const docRef = await addDoc(collection(db, 'files'), fileData);
 
@@ -246,6 +269,7 @@ export const saveProjectFileMetadata = createAsyncThunk(
         transcription,
         videoType,
         aiAnalysis,
+        duration,
       } as ProjectFile;
     } catch (error: any) {
       return rejectWithValue(error.message);
