@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useState } from 'react';
 import {
@@ -55,6 +55,10 @@ import {
   OndemandVideo,
   HighQuality,
   Compress,
+  CheckCircle,
+  Summarize,
+  Videocam,
+  Description,
 } from '@mui/icons-material';
 import { TranscriptSegment } from '../utils/audioTranscription';
 import { analyzeVideo, getProviderDisplayName, isProviderConfigured } from '@/lib/ai';
@@ -126,7 +130,7 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const dispatch = useAppDispatch();
-  const [step, setStep] = useState<'type' | 'upload' | 'selected' | 'uploading' | 'transcribe' | 'analyze' | 'review-prompt'>('type');
+  const [step, setStep] = useState<'type' | 'upload' | 'selected' | 'uploading' | 'transcribe' | 'analyze' | 'recommend' | 'review-prompt'>('type');
   const [selectedType, setSelectedType] = useState<string>('');
   const [selectedFile, setSelectedFile] = useState<File | null>(preSelectedFile || null);
   const [firebaseUrl, setFirebaseUrl] = useState<string>(''); // Firebase Storage URL
@@ -379,7 +383,7 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
           })
         ).unwrap();
         setSavedDocId(savedFile.id);
-        console.log('âœ… Initial file metadata saved to database:', savedFile.id);
+        console.log('Initial file metadata saved to database:', savedFile.id);
       } catch (dbErr: any) {
         console.error('âš ï¸ Failed to save initial metadata:', dbErr);
         // Don't block the flow - file is uploaded, metadata save can be retried
@@ -409,7 +413,7 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
       // Works directly on the video in GCS â€” no audio extraction needed
       const { transcribeVideo } = await import('@/utils/audioTranscription');
 
-      console.log('ðŸŽ¤ Transcribing video via Google Cloud:', storagePath);
+      console.log('Transcribing video via Google Cloud:', storagePath);
       
       const result = await transcribeVideo(storagePath);
 
@@ -428,7 +432,7 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
               },
             })
           ).unwrap();
-          console.log('âœ… Transcription saved to database');
+          console.log('Transcription saved to database');
         } catch (dbErr: any) {
           console.error('âš ï¸ Failed to save transcription to database:', dbErr);
           // Don't block the flow
@@ -475,7 +479,7 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
       );
 
       setAnalysis(result);
-      console.log('âœ… AI Analysis complete');
+      console.log('AI Analysis complete');
       
       // Save AI analysis to database incrementally
       if (savedDocId) {
@@ -486,7 +490,7 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
               updates: { aiAnalysis: result },
             })
           ).unwrap();
-          console.log('âœ… AI analysis saved to database');
+          console.log('AI analysis saved to database');
         } catch (dbErr: any) {
           console.error('âš ï¸ Failed to save AI analysis to database:', dbErr);
         }
@@ -631,7 +635,7 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
               },
             })
           ).unwrap();
-          console.log('âœ… Auto-edit metadata saved to database');
+          console.log('Auto-edit metadata saved to database');
         } catch (dbErr: any) {
           console.error('âš ï¸ Failed to save auto-edit metadata:', dbErr);
         }
@@ -1021,8 +1025,8 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
               </>
             ) : (
               <Alert severity="success" sx={{ mb: 2 }}>
-                <Typography variant="subtitle2" fontWeight={600} gutterBottom>
-                  âœ… Upload Complete!
+                <Typography variant="subtitle2" fontWeight={600} gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <CheckCircle fontSize="small" color="success" /> Upload Complete!
                 </Typography>
                 <Typography variant="body2">
                   Your video has been uploaded to Firebase Storage{savedDocId ? ' and saved to the database' : ''}.
@@ -1108,8 +1112,8 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
 
           {transcription && (
             <>
-              <Typography variant="h6" fontWeight={700} gutterBottom>
-                Transcription Complete âœ“
+              <Typography variant="h6" fontWeight={700} gutterBottom sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                Transcription Complete <CheckCircle fontSize="small" color="success" />
               </Typography>
               <Card
                 variant="outlined"
@@ -1326,7 +1330,7 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
                 <strong>What you'll get:</strong>
                 <ul style={{ margin: '8px 0 0 0', paddingLeft: '20px' }}>
                   <li>Scene detection and timestamps</li>
-                  <li>Suggested cuts and edits</li>
+                  <li>Content quality insights</li>
                   <li>Text overlay recommendations</li>
                   <li>Key moments and highlights</li>
                 </ul>
@@ -1336,8 +1340,8 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
 
           {analysis && (
             <>
-              <Typography variant="h6" fontWeight={700} gutterBottom>
-                AI Analysis Complete âœ“
+              <Typography variant="h6" fontWeight={700} gutterBottom sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                AI Analysis Complete <CheckCircle fontSize="small" color="success" />
               </Typography>
               
               <Card
@@ -1358,14 +1362,14 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
                 
                 <Divider sx={{ my: 2 }} />
 
-                {/* Detailed Analysis Results */}
+                {/* Detailed Analysis Results (recommendations moved to recommend step) */}
                 <Box sx={{ maxHeight: 400, overflow: 'auto' }}>
                   {/* Video Summary - NEW */}
                   {analysis?.analysis?.summary && (
                     <Accordion defaultExpanded>
                       <AccordionSummary expandIcon={<ExpandMore />}>
-                        <Typography variant="subtitle2" fontWeight={600}>
-                          ðŸ“‹ Video Summary
+                        <Typography variant="subtitle2" fontWeight={600} sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                          <Summarize fontSize="small" /> Video Summary
                         </Typography>
                       </AccordionSummary>
                       <AccordionDetails>
@@ -1432,8 +1436,8 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
                   {analysis.analysis.scenes.length > 0 && (
                     <Accordion defaultExpanded>
                       <AccordionSummary expandIcon={<ExpandMore />}>
-                        <Typography variant="subtitle2" fontWeight={600}>
-                          ðŸ“¹ Detected Scenes ({analysis.analysis.scenes.length})
+                        <Typography variant="subtitle2" fontWeight={600} sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                          <Videocam fontSize="small" /> Detected Scenes ({analysis.analysis.scenes.length})
                         </Typography>
                       </AccordionSummary>
                       <AccordionDetails>
@@ -1477,72 +1481,11 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
                       </AccordionDetails>
                     </Accordion>
                   )}
-
-                  {/* AI Recommendations - Rendered as Markdown */}
-                  {analysis.recommendations && (
-                    <Accordion defaultExpanded>
-                      <AccordionSummary expandIcon={<ExpandMore />}>
-                        <Typography variant="subtitle2" fontWeight={600}>
-                          ðŸ’¡ AI Editing Recommendations
-                        </Typography>
-                      </AccordionSummary>
-                      <AccordionDetails>
-                        <Box 
-                          sx={{ 
-                            '& h1': { fontSize: '1.25rem', fontWeight: 700, mb: 1, mt: 2 },
-                            '& h2': { fontSize: '1rem', fontWeight: 600, mb: 1, mt: 2 },
-                            '& h3': { fontSize: '0.875rem', fontWeight: 600, mb: 0.5, mt: 1 },
-                            '& p': { fontSize: '0.813rem', mb: 1 },
-                            '& ul, & ol': { fontSize: '0.813rem', pl: 2.5, mb: 1 },
-                            '& li': { mb: 0.5 },
-                            '& strong': { fontWeight: 600 },
-                            '& code': { 
-                              bgcolor: 'grey.100', 
-                              px: 0.5, 
-                              py: 0.25, 
-                              borderRadius: 0.5,
-                              fontSize: '0.75rem'
-                            }
-                          }}
-                        >
-                          {/* Render markdown content */}
-                          {analysis.recommendations.split('\n').map((line: string, idx: number) => {
-                            // Handle headers
-                            if (line.startsWith('# ')) {
-                              return <Typography key={idx} variant="h1" sx={{ fontSize: '1.25rem', fontWeight: 700, mb: 1, mt: 2 }}>{line.replace('# ', '')}</Typography>;
-                            }
-                            if (line.startsWith('## ')) {
-                              return <Typography key={idx} variant="h2" sx={{ fontSize: '1rem', fontWeight: 600, mb: 1, mt: 2 }}>{line.replace('## ', '')}</Typography>;
-                            }
-                            // Handle list items
-                            if (line.match(/^\d+\. /)) {
-                              return <Typography key={idx} component="li" sx={{ fontSize: '0.813rem', mb: 0.5, ml: 2 }}>{line.replace(/^\d+\. /, '')}</Typography>;
-                            }
-                            // Handle bold text with timestamps
-                            if (line.includes('**')) {
-                              const parts = line.split('**');
-                              return (
-                                <Typography key={idx} sx={{ fontSize: '0.813rem', mb: 0.5 }}>
-                                  {parts.map((part, i) => i % 2 === 1 ? <strong key={i}>{part}</strong> : part)}
-                                </Typography>
-                              );
-                            }
-                            // Regular text
-                            if (line.trim()) {
-                              return <Typography key={idx} sx={{ fontSize: '0.813rem', mb: 0.5 }}>{line}</Typography>;
-                            }
-                            return <br key={idx} />;
-                          })}
-                        </Box>
-                      </AccordionDetails>
-                    </Accordion>
-                  )}
-                  
                   {/* Transcript that was analyzed */}
                   <Accordion>
                     <AccordionSummary expandIcon={<ExpandMore />}>
-                      <Typography variant="subtitle2" fontWeight={600}>
-                        ðŸ“„ Transcript Analyzed
+                      <Typography variant="subtitle2" fontWeight={600} sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                        <Description fontSize="small" /> Transcript Analyzed
                       </Typography>
                     </AccordionSummary>
                     <AccordionDetails>
@@ -1618,64 +1561,8 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
               )}
 
               <Alert severity="success">
-                Video is ready to upload with AI analysis!
+                Analysis complete! Your video analysis data has been saved.
               </Alert>
-
-              {/* Next Step: Review AI Prompt & Generate */}
-              <Divider sx={{ my: 2 }} />
-              
-              <Card
-                variant="outlined"
-                sx={{
-                  p: 2,
-                  mb: 2,
-                  background: 'linear-gradient(135deg, rgba(99,102,241,0.05) 0%, rgba(236,72,153,0.05) 100%)',
-                  borderColor: 'divider',
-                }}
-              >
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5 }}>
-                  <Visibility color="primary" />
-                  <Box>
-                    <Typography variant="subtitle1" fontWeight={700}>
-                      Review AI Prompt & Generate Video
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      Review the full AI prompt before generating your edited video
-                    </Typography>
-                  </Box>
-                </Box>
-
-                {loadingPromptPreview && (
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1.5 }}>
-                    <CircularProgress size={18} />
-                    <Typography variant="body2" color="text.secondary">
-                      Building prompt preview...
-                    </Typography>
-                  </Box>
-                )}
-
-                <Button
-                  variant="contained"
-                  startIcon={<Visibility />}
-                  onClick={handlePreviewPrompt}
-                  fullWidth
-                  disabled={loadingPromptPreview || !transcriptionSegments || transcriptionSegments.length === 0}
-                  sx={{
-                    background: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)',
-                    '&:hover': {
-                      background: 'linear-gradient(135deg, #0d9488 0%, #0f766e 100%)',
-                    },
-                  }}
-                >
-                  {loadingPromptPreview ? 'Loading...' : 'Review AI Prompt \u2192'}
-                </Button>
-
-                {(!transcriptionSegments || transcriptionSegments.length === 0) && (
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1, textAlign: 'center' }}>
-                    Transcript with timestamps is required for auto-edit
-                  </Typography>
-                )}
-              </Card>
             </>
           )}
 
@@ -1705,7 +1592,174 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
       );
     }
 
-    // Step 5: Review AI Prompt & Generate
+    // Step 5: AI Recommendations (optional)
+    if (step === 'recommend') {
+      const selectedTypeData = videoTypes.find((t) => t.id === selectedType);
+
+      return (
+        <Box sx={{ py: 2 }}>
+          {error && (
+            <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
+              {error}
+            </Alert>
+          )}
+
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
+            <Box
+              sx={{
+                width: 48,
+                height: 48,
+                borderRadius: 1,
+                background: 'linear-gradient(135deg, #6366f1 0%, #ec4899 100%)',
+                color: 'white',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <AutoFixHigh />
+            </Box>
+            <Box sx={{ flexGrow: 1 }}>
+              <Typography variant="subtitle1" fontWeight={700}>
+                AI Editing Recommendations
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                Get intelligent suggestions to auto-edit your video
+              </Typography>
+            </Box>
+          </Box>
+
+          <Divider sx={{ mb: 3 }} />
+
+          {/* Analysis summary */}
+          {analysis && (
+            <Card variant="outlined" sx={{ p: 2, mb: 2, bgcolor: 'background.default' }}>
+              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mb: 1 }}>
+                <Chip label={`${analysis.analysis.scenes.length} Scenes`} size="small" color="primary" />
+                <Chip label={`${analysis.analysis.keyMoments.length} Key Moments`} size="small" color="success" />
+                {analysis.analysis.transcription && (
+                  <Chip label="With Transcript" size="small" color="info" />
+                )}
+              </Box>
+              <Typography variant="caption" color="text.secondary">
+                Analysis data is already saved. Recommendations will use this data to suggest edits.
+              </Typography>
+            </Card>
+          )}
+
+          {/* Show recommendations if already generated */}
+          {analysis?.recommendations && (
+            <Accordion defaultExpanded sx={{ mb: 2 }}>
+              <AccordionSummary expandIcon={<ExpandMore />}>
+                <Typography variant="subtitle2" fontWeight={600}>
+                  💡 AI Editing Recommendations
+                </Typography>
+              </AccordionSummary>
+              <AccordionDetails>
+                <Box
+                  sx={{
+                    '& h1': { fontSize: '1.25rem', fontWeight: 700, mb: 1, mt: 2 },
+                    '& h2': { fontSize: '1rem', fontWeight: 600, mb: 1, mt: 2 },
+                    '& h3': { fontSize: '0.875rem', fontWeight: 600, mb: 0.5, mt: 1 },
+                    '& p': { fontSize: '0.813rem', mb: 1 },
+                    '& ul, & ol': { fontSize: '0.813rem', pl: 2.5, mb: 1 },
+                    '& li': { mb: 0.5 },
+                    '& strong': { fontWeight: 600 },
+                    '& code': {
+                      bgcolor: 'grey.100',
+                      px: 0.5,
+                      py: 0.25,
+                      borderRadius: 0.5,
+                      fontSize: '0.75rem',
+                    },
+                  }}
+                >
+                  {analysis.recommendations.split('\n').map((line: string, idx: number) => {
+                    if (line.startsWith('# ')) {
+                      return <Typography key={idx} variant="h1" sx={{ fontSize: '1.25rem', fontWeight: 700, mb: 1, mt: 2 }}>{line.replace('# ', '')}</Typography>;
+                    }
+                    if (line.startsWith('## ')) {
+                      return <Typography key={idx} variant="h2" sx={{ fontSize: '1rem', fontWeight: 600, mb: 1, mt: 2 }}>{line.replace('## ', '')}</Typography>;
+                    }
+                    if (line.match(/^\d+\. /)) {
+                      return <Typography key={idx} component="li" sx={{ fontSize: '0.813rem', mb: 0.5, ml: 2 }}>{line.replace(/^\d+\. /, '')}</Typography>;
+                    }
+                    if (line.includes('**')) {
+                      const parts = line.split('**');
+                      return (
+                        <Typography key={idx} sx={{ fontSize: '0.813rem', mb: 0.5 }}>
+                          {parts.map((part, i) => i % 2 === 1 ? <strong key={i}>{part}</strong> : part)}
+                        </Typography>
+                      );
+                    }
+                    if (line.trim()) {
+                      return <Typography key={idx} sx={{ fontSize: '0.813rem', mb: 0.5 }}>{line}</Typography>;
+                    }
+                    return <br key={idx} />;
+                  })}
+                </Box>
+              </AccordionDetails>
+            </Accordion>
+          )}
+
+          {/* Review Prompt & Generate section */}
+          <Card
+            variant="outlined"
+            sx={{
+              p: 2,
+              mb: 2,
+              background: 'linear-gradient(135deg, rgba(99,102,241,0.05) 0%, rgba(236,72,153,0.05) 100%)',
+              borderColor: 'divider',
+            }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5 }}>
+              <Visibility color="primary" />
+              <Box>
+                <Typography variant="subtitle1" fontWeight={700}>
+                  Review AI Prompt & Generate Video
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Review the full AI prompt before generating your edited video
+                </Typography>
+              </Box>
+            </Box>
+
+            {loadingPromptPreview && (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1.5 }}>
+                <CircularProgress size={18} />
+                <Typography variant="body2" color="text.secondary">
+                  Building prompt preview...
+                </Typography>
+              </Box>
+            )}
+
+            <Button
+              variant="contained"
+              startIcon={<Visibility />}
+              onClick={handlePreviewPrompt}
+              fullWidth
+              disabled={loadingPromptPreview || !transcriptionSegments || transcriptionSegments.length === 0}
+              sx={{
+                background: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)',
+                '&:hover': {
+                  background: 'linear-gradient(135deg, #0d9488 0%, #0f766e 100%)',
+                },
+              }}
+            >
+              {loadingPromptPreview ? 'Loading...' : 'Review AI Prompt →'}
+            </Button>
+
+            {(!transcriptionSegments || transcriptionSegments.length === 0) && (
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1, textAlign: 'center' }}>
+                Transcript with timestamps is required for auto-edit
+              </Typography>
+            )}
+          </Card>
+        </Box>
+      );
+    }
+
+    // Step 6: Review AI Prompt & Generate
     if (step === 'review-prompt') {
       return (
         <Box sx={{ py: 2 }}>
@@ -2179,6 +2233,20 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
             >
               {analyzing ? 'Analyzing...' : 'Analyze with AI'}
             </Button>
+          ) : analysis ? (
+            <Button
+              onClick={handleUploadVideo}
+              variant="contained"
+              disabled={uploading}
+              sx={{
+                background: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)',
+                '&:hover': {
+                  background: 'linear-gradient(135deg, #0d9488 0%, #0f766e 100%)',
+                },
+              }}
+            >
+              {uploading ? 'Saving...' : 'Finish'}
+            </Button>
           ) : (
             <Button
               onClick={handleUploadVideo}
@@ -2198,7 +2266,7 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
       );
     }
 
-    if (step === 'review-prompt') {
+    if (step === 'recommend') {
       return (
         <>
           <Button
@@ -2206,7 +2274,34 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
             variant="outlined"
             disabled={autoEditing}
           >
-            Back to Analysis
+            Back
+          </Button>
+          <Button
+            onClick={handleUploadVideo}
+            variant="contained"
+            disabled={uploading || autoEditing}
+            sx={{
+              background: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)',
+              '&:hover': {
+                background: 'linear-gradient(135deg, #0d9488 0%, #0f766e 100%)',
+              },
+            }}
+          >
+            {uploading ? 'Saving...' : (savedDocId ? 'Finish & Close' : 'Finish')}
+          </Button>
+        </>
+      );
+    }
+
+    if (step === 'review-prompt') {
+      return (
+        <>
+          <Button
+            onClick={() => setStep('recommend')}
+            variant="outlined"
+            disabled={autoEditing}
+          >
+            Back
           </Button>
           <Button
             onClick={handleUploadVideo}
