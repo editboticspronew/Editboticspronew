@@ -48,6 +48,9 @@ import {
   ThumbUp,
   ThumbDown,
   Refresh,
+  Visibility,
+  ThumbsUpDown,
+  Code,
 } from '@mui/icons-material';
 import VideoPlayer from './VideoPlayer';
 import type { TransitionType } from '@/lib/video/clipVideo';
@@ -89,6 +92,66 @@ interface GenerateClipsDialogProps {
 }
 
 
+
+// Default prompt template — editable by the user in the UI.
+// {{USER_PROMPT}} is replaced with the user's query at generation time.
+// Segments and scenes data are injected automatically by the backend.
+const DEFAULT_PROMPT_TEMPLATE = `You are an expert video editor.
+
+Your job is to create an edit plan for a shorter final video.
+
+You will receive:
+1. The user's editing instruction
+2. Timestamped transcript segments
+3. Timestamped scene analysis (if available)
+
+Use both the transcript and the scene information together.
+
+You must:
+- Understand the user's goal
+- Decide what sections should be KEPT
+- Decide what sections should be REMOVED
+- Prefer sections where spoken content and visual content support each other
+- Build a tighter and more engaging final structure
+
+Do NOT return summaries, recommendations, or extra notes.
+Only return editing decisions.
+
+USER PROMPT:
+{{USER_PROMPT}}
+
+ADDITIONAL INSTRUCTIONS:
+- Include segments that provide narrative context (intro/outro to the topic)
+- Prioritize segments that tell a coherent story when played in sequence
+- Prefer segments with stronger narrative moments, emotional impact, or viewer engagement
+- If the kept sections would feel disjointed when played together, add bridging context segments
+- Be selective — only keep sections that are clearly relevant and engaging
+
+Return valid JSON in exactly this format:
+{
+  "editPlan": [
+    {
+      "index": number,
+      "start": number,
+      "end": number,
+      "text": "segment text",
+      "action": "keep",
+      "purpose": "intro | context | key_moment | conclusion",
+      "reason": "short reason",
+      "runningTotal": number,
+      "priority": number (1-10, 1 = best hook)
+    }
+  ],
+  "removeRanges": [
+    {
+      "start": number,
+      "end": number,
+      "reason": "short reason"
+    }
+  ]
+}
+
+Return ONLY valid JSON, no markdown or explanation.`;
 
 // Sub-component: clip preview with live subtitle overlay
 function ClipPreviewPlayer({
@@ -178,6 +241,13 @@ export default function GenerateClipsDialog({ open, onClose, file, projectId }: 
   // Iterative feedback loop
   const [clipFeedback, setClipFeedback] = useState<Map<number, 'liked' | 'disliked'>>(new Map());
 
+  // Debug: LLM prompt & response display
+  const [debugPrompt, setDebugPrompt] = useState<string>('');
+  const [debugLlmResponse, setDebugLlmResponse] = useState<string>('');
+
+  // Editable prompt template
+  const [promptTemplate, setPromptTemplate] = useState(DEFAULT_PROMPT_TEMPLATE);
+
   // Sync cached vision data when file prop changes
   React.useEffect(() => {
     if (file?.visionAnalysis) {
@@ -203,6 +273,8 @@ export default function GenerateClipsDialog({ open, onClose, file, projectId }: 
     setMergedVideo(null);
     setCachedVisionData(null);
     setClipFeedback(new Map());
+    setDebugPrompt('');
+    setDebugLlmResponse('');
     setUseVisionAnalysis(false);
     onClose();
   };
@@ -223,9 +295,11 @@ export default function GenerateClipsDialog({ open, onClose, file, projectId }: 
     setClips([]);
     setMergedVideo(null);
     setClipFeedback(new Map());
+    setDebugPrompt('');
+    setDebugLlmResponse('');
 
     try {
-      // â”€â”€ Optional Step: Vision Analysis â”€â”€
+      // Vision Analysis
       let enrichedSegments = undefined;
 
       if (useVisionAnalysis) {
@@ -307,10 +381,16 @@ export default function GenerateClipsDialog({ open, onClose, file, projectId }: 
             : undefined,
           // Feedback loop
           clipFeedback: clipFeedbackPayload,
+          // Custom prompt template (with {{USER_PROMPT}} placeholder)
+          promptTemplate: promptTemplate !== DEFAULT_PROMPT_TEMPLATE ? promptTemplate : undefined,
         }),
       });
 
       const data = await response.json();
+
+      // Capture debug data (prompt & LLM response) for display
+      if (data.debugPrompt) setDebugPrompt(data.debugPrompt);
+      if (data.debugLlmResponse) setDebugLlmResponse(data.debugLlmResponse);
 
       if (!response.ok) {
         throw new Error(data.error || 'Failed to analyze segments');
@@ -366,7 +446,7 @@ export default function GenerateClipsDialog({ open, onClose, file, projectId }: 
             console.error('Auto-merge failed:', err);
           }
         } else if (clipResults.length === 1) {
-          // Single clip â€” show it as the "merged" result directly
+          // Single clip — show it as the "merged" result directly
           setMergedVideo({
             blob: clipResults[0].blob,
             objectUrl: clipResults[0].objectUrl,
@@ -597,7 +677,7 @@ export default function GenerateClipsDialog({ open, onClose, file, projectId }: 
               fullWidth
               variant="outlined"
               size="small"
-              label="â± Duration Constraint (optional)"
+              label="Duration Constraint (optional)"
               placeholder="e.g., Summarize in 30 seconds, Keep under 2 minutes, Maximum 60 seconds of highlights..."
               value={durationConstraint}
               onChange={(e) => setDurationConstraint(e.target.value)}
@@ -679,11 +759,11 @@ export default function GenerateClipsDialog({ open, onClose, file, projectId }: 
                   label={
                     <Box>
                       <Typography variant="body2" fontWeight={600}>
-                        ðŸ” Vision Analysis
+                        <Visibility fontSize="small" sx={{ mr: 0.5, verticalAlign: "middle" }} /> Vision Analysis
                       </Typography>
                       <Typography variant="caption" color="text.secondary">
                         {cachedVisionData || file?.visionAnalysis
-                          ? 'âœ“ Cached â€” uses visual signals (labels, objects, faces) for more accurate clips'
+                          ? 'Cached — uses visual signals (labels, objects, faces) for more accurate clips'
                           : 'Analyzes video visuals for better clip accuracy (1-3 min, runs once per video)'}
                       </Typography>
                     </Box>
@@ -695,7 +775,7 @@ export default function GenerateClipsDialog({ open, onClose, file, projectId }: 
                     <Alert severity="info" variant="outlined" sx={{ py: 0.5 }}>
                       <Typography variant="caption">
                         {cachedVisionData || file?.visionAnalysis
-                          ? 'Vision data is cached. No extra wait time â€” clips will use both transcript and visual context.'
+                          ? 'Vision data is cached. No extra wait time — clips will use both transcript and visual context.'
                           : 'Google Cloud Video Intelligence will analyze scene boundaries, labels, objects, and faces. Results are cached for future use.'}
                       </Typography>
                     </Alert>
@@ -703,6 +783,58 @@ export default function GenerateClipsDialog({ open, onClose, file, projectId }: 
                 )}
               </Card>
             )}
+
+            {/* Advanced Settings */}
+            <Accordion
+              variant="outlined"
+              sx={{ '&:before': { display: 'none' }, mb: 1 }}
+            >
+              <AccordionSummary expandIcon={<ExpandMore />}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Code sx={{ fontSize: 18 }} color="info" />
+                  <Typography variant="body2" fontWeight={600}>
+                    Edit Prompt Template
+                  </Typography>
+                  {promptTemplate !== DEFAULT_PROMPT_TEMPLATE && (
+                    <Chip label="Modified" size="small" color="warning" sx={{ ml: 1, height: 20, fontSize: '0.65rem' }} />
+                  )}
+                </Box>
+              </AccordionSummary>
+              <AccordionDetails>
+                <Alert severity="info" sx={{ mb: 1.5, py: 0.5 }}>
+                  <Typography variant="caption">
+                    <code>{`{{USER_PROMPT}}`}</code> is replaced with your query at generation time.
+                    Transcript segments and scene data are injected automatically.
+                  </Typography>
+                </Alert>
+                <TextField
+                  multiline
+                  fullWidth
+                  minRows={10}
+                  maxRows={25}
+                  value={promptTemplate}
+                  onChange={(e) => setPromptTemplate(e.target.value)}
+                  sx={{
+                    '& .MuiInputBase-input': {
+                      fontFamily: 'monospace',
+                      fontSize: '0.75rem',
+                      lineHeight: 1.5,
+                    },
+                  }}
+                />
+                <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 1, gap: 1 }}>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={() => setPromptTemplate(DEFAULT_PROMPT_TEMPLATE)}
+                    disabled={promptTemplate === DEFAULT_PROMPT_TEMPLATE}
+                    startIcon={<Refresh />}
+                  >
+                    Reset to Default
+                  </Button>
+                </Box>
+              </AccordionDetails>
+            </Accordion>
 
             {/* Advanced Settings */}
             <Accordion
@@ -840,6 +972,70 @@ export default function GenerateClipsDialog({ open, onClose, file, projectId }: 
           </Alert>
         )}
 
+        {/* Debug accordions shown on error too (e.g. "no segments matched") */}
+        {error && !loading && !merging && (debugPrompt || debugLlmResponse) && (
+          <Box sx={{ mb: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
+            {debugPrompt && (
+              <Accordion variant="outlined" sx={{ '&:before': { display: 'none' } }}>
+                <AccordionSummary expandIcon={<ExpandMore />}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <SmartToy sx={{ fontSize: 18 }} color="info" />
+                    <Typography variant="subtitle2">LLM Prompt</Typography>
+                  </Box>
+                </AccordionSummary>
+                <AccordionDetails>
+                  <Box
+                    component="pre"
+                    sx={{
+                      whiteSpace: 'pre-wrap',
+                      wordBreak: 'break-word',
+                      fontSize: '0.75rem',
+                      fontFamily: 'monospace',
+                      bgcolor: 'action.hover',
+                      p: 1.5,
+                      borderRadius: 1,
+                      maxHeight: 400,
+                      overflow: 'auto',
+                      m: 0,
+                    }}
+                  >
+                    {debugPrompt}
+                  </Box>
+                </AccordionDetails>
+              </Accordion>
+            )}
+            {debugLlmResponse && (
+              <Accordion variant="outlined" sx={{ '&:before': { display: 'none' } }}>
+                <AccordionSummary expandIcon={<ExpandMore />}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Visibility sx={{ fontSize: 18 }} color="success" />
+                    <Typography variant="subtitle2">LLM Response</Typography>
+                  </Box>
+                </AccordionSummary>
+                <AccordionDetails>
+                  <Box
+                    component="pre"
+                    sx={{
+                      whiteSpace: 'pre-wrap',
+                      wordBreak: 'break-word',
+                      fontSize: '0.75rem',
+                      fontFamily: 'monospace',
+                      bgcolor: 'action.hover',
+                      p: 1.5,
+                      borderRadius: 1,
+                      maxHeight: 400,
+                      overflow: 'auto',
+                      m: 0,
+                    }}
+                  >
+                    {debugLlmResponse}
+                  </Box>
+                </AccordionDetails>
+              </Accordion>
+            )}
+          </Box>
+        )}
+
         {/* Results */}
         {clips.length > 0 && !loading && !merging && (
           <Box sx={{ py: 2 }}>
@@ -884,7 +1080,71 @@ export default function GenerateClipsDialog({ open, onClose, file, projectId }: 
               )}
             </Alert>
 
-            {/* Merged Video â€” Primary Result */}
+            {/* Debug: LLM Prompt & Response */}
+            {(debugPrompt || debugLlmResponse) && (
+              <Box sx={{ mb: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
+                {debugPrompt && (
+                  <Accordion variant="outlined" sx={{ '&:before': { display: 'none' } }}>
+                    <AccordionSummary expandIcon={<ExpandMore />}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <SmartToy sx={{ fontSize: 18 }} color="info" />
+                        <Typography variant="subtitle2">LLM Prompt</Typography>
+                      </Box>
+                    </AccordionSummary>
+                    <AccordionDetails>
+                      <Box
+                        component="pre"
+                        sx={{
+                          whiteSpace: 'pre-wrap',
+                          wordBreak: 'break-word',
+                          fontSize: '0.75rem',
+                          fontFamily: 'monospace',
+                          bgcolor: 'action.hover',
+                          p: 1.5,
+                          borderRadius: 1,
+                          maxHeight: 400,
+                          overflow: 'auto',
+                          m: 0,
+                        }}
+                      >
+                        {debugPrompt}
+                      </Box>
+                    </AccordionDetails>
+                  </Accordion>
+                )}
+                {debugLlmResponse && (
+                  <Accordion variant="outlined" sx={{ '&:before': { display: 'none' } }}>
+                    <AccordionSummary expandIcon={<ExpandMore />}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Visibility sx={{ fontSize: 18 }} color="success" />
+                        <Typography variant="subtitle2">LLM Response</Typography>
+                      </Box>
+                    </AccordionSummary>
+                    <AccordionDetails>
+                      <Box
+                        component="pre"
+                        sx={{
+                          whiteSpace: 'pre-wrap',
+                          wordBreak: 'break-word',
+                          fontSize: '0.75rem',
+                          fontFamily: 'monospace',
+                          bgcolor: 'action.hover',
+                          p: 1.5,
+                          borderRadius: 1,
+                          maxHeight: 400,
+                          overflow: 'auto',
+                          m: 0,
+                        }}
+                      >
+                        {debugLlmResponse}
+                      </Box>
+                    </AccordionDetails>
+                  </Accordion>
+                )}
+              </Box>
+            )}
+
+            {/* Merged Video — Primary Result */}
             {mergedVideo && (
               <Card variant="outlined" sx={{ mb: 3, border: 2, borderColor: 'primary.main' }}>
                 <CardContent>
@@ -1101,7 +1361,7 @@ export default function GenerateClipsDialog({ open, onClose, file, projectId }: 
               {clipFeedback.size === 0 && (
                 <Alert severity="info" variant="outlined" sx={{ py: 0.25, width: '100%' }}>
                   <Typography variant="caption">
-                    ðŸ‘ðŸ‘Ž Rate clips with thumbs up/down, then click Regenerate to improve results with AI feedback
+                    <ThumbsUpDown fontSize="small" sx={{ mr: 0.5, verticalAlign: "middle" }} /> Rate clips with thumbs up/down, then click Regenerate to improve results with AI feedback
                   </Typography>
                 </Alert>
               )}

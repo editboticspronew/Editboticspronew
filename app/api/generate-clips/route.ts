@@ -126,11 +126,10 @@ export async function POST(request: NextRequest) {
       mustIncludeKeywords, // Optional: keywords that MUST appear in selected clips
       excludeKeywords,     // Optional: keywords/topics to EXCLUDE from clips
       clipFeedback,        // Optional: previous clips with user feedback for regeneration
+      promptTemplate,       // Optional: custom prompt template from frontend (with {{USER_PROMPT}} placeholder)
     } = body;
 
     // All optimizations are always ON by default
-    const silenceTrimming = true;
-    const redundancyElimination = true;
     const hookFirstReorder = true;
 
     // Validate
@@ -162,7 +161,7 @@ export async function POST(request: NextRequest) {
     console.log(`   Vision enrichment: ${enrichedSegments ? 'YES' : 'NO'}`);
     console.log(`   Scene-snap: ${scenes?.length ? `YES (${scenes.length} scenes)` : 'NO'}`);
     console.log(`   Feedback loop: ${clipFeedback?.previousClips?.length > 0 ? `YES (${clipFeedback.previousClips.length} clips rated)` : 'NO'}`);
-    console.log(`   Optimizations: silenceTrimming=ON, redundancyElimination=ON, hookFirstReorder=ON`);
+    console.log(`   Optimizations: hookFirstReorder=ON`);
 
     // Parse the user's duration constraint into a target seconds value (if possible)
     const targetDurationSeconds = durationConstraint ? parseDurationConstraint(durationConstraint) : null;
@@ -197,12 +196,6 @@ export async function POST(request: NextRequest) {
       keywordInstruction += `\n\nEXCLUDE KEYWORDS: ${excludeKeywords.trim()}\nIMPORTANT: Do NOT include segments that are primarily about these topics or keywords. If a segment's main subject matches an excluded keyword, skip it even if it partially overlaps with the user's query.`;
     }
 
-    // Redundancy elimination instruction (always on)
-    const redundancyInstruction = `\n\nREDUNDANCY ELIMINATION: If multiple segments cover the exact same topic, point, or repeated content, pick only the MOST concise and clear version. Do not include near-duplicate segments that restate the same information.`;
-
-    // Silence & filler trimming instruction (always on)
-    const silenceInstruction = `\n\nSILENCE & FILLER TRIMMING: Exclude segments that are primarily filler words ("um", "uh", "like", "you know", "so", "basically"), long pauses, or dead air. When a segment contains filler at the start or end, tighten the start/end timestamps to skip the filler portion. Prefer clean, concise segments without verbal hesitations.`;
-
     // Hook-first reordering instruction (always on)
     const hookInstruction = `\n\nHOOK-FIRST REORDERING: Also assign each selected segment a "priority" field (integer 1-10, where 1 = most engaging/impactful moment that would make a great hook to grab viewer attention). Consider surprise reveals, emotional peaks, key insights, and provocative statements when scoring.`;
 
@@ -223,18 +216,25 @@ export async function POST(request: NextRequest) {
     }
 
     // ──────────────────────────────────────────────
-    // Step 1: Use LLM to identify relevant segments
+    // Step 1: Use LLM to create an edit plan
     // ──────────────────────────────────────────────
 
     const useMultimodal = Array.isArray(enrichedSegments) && enrichedSegments.length > 0;
 
+    // Build scenes block for the prompt (included when available)
+    const hasScenes = Array.isArray(scenes) && scenes.length > 0;
+    const scenesBlock = hasScenes
+      ? `\nSCENES:\n${JSON.stringify(scenes.map((s: any) => ({ start: Number(s.start), end: Number(s.end), description: s.description || '' })), null, 2)}`
+      : '';
+
     // ── Estimate instruction overhead tokens (everything except segments data) ──
     const instructionOverhead = estimateTokens(
-      [durationInstruction, keywordInstruction, redundancyInstruction,
-       silenceInstruction, hookInstruction, feedbackInstruction, userQuery].join('')
+      [durationInstruction, keywordInstruction,
+       hookInstruction, feedbackInstruction, userQuery].join('')
     ) + 800; // base prompt template + formatting
 
     let llmPrompt: string;
+    let segmentsDataBlock: string = ''; // Holds prepared segment data for custom template injection
 
     if (useMultimodal) {
       // ── Enhanced multimodal prompt with vision data ──
@@ -262,31 +262,72 @@ export async function POST(request: NextRequest) {
 
       const enrichedForLLM = compressed.segments;
 
-      llmPrompt = `You are a video editor assistant and creative director with access to BOTH transcript text AND visual analysis data. Use both signals to identify the most relevant segments. Think like a skilled editor building a mini-story, not a search engine matching keywords.
+      // Save segments data block for custom template injection
+      segmentsDataBlock = `ENRICHED SEGMENTS (transcript + visual analysis)${compressed.compressionLevel > 0 ? ` [compressed: ${compressed.originalCount} total, showing ${compressed.segments.length}]` : ''}:
+${JSON.stringify(enrichedForLLM, null, 2)}`;
 
-USER REQUEST: "${userQuery}"${durationInstruction}${keywordInstruction}${redundancyInstruction}${silenceInstruction}${hookInstruction}${feedbackInstruction}
+      llmPrompt = `You are an expert video editor.
+
+Your job is to create an edit plan for a shorter final video.
+
+You will receive:
+1. The user's editing instruction
+2. Timestamped transcript segments (with visual analysis data)
+3. Timestamped scene analysis (if available)
+
+Use both the transcript and the scene information together.
+
+You must:
+- Understand the user's goal
+- Decide what sections should be KEPT
+- Decide what sections should be REMOVED
+- Prefer sections where spoken content and visual content support each other
+- Build a tighter and more engaging final structure
+
+Do NOT return summaries, recommendations, or extra notes.
+Only return editing decisions.
+
+USER PROMPT:
+"${userQuery}"${durationInstruction}${keywordInstruction}${hookInstruction}${feedbackInstruction}
 
 ENRICHED SEGMENTS (transcript + visual analysis)${compressed.compressionLevel > 0 ? ` [compressed: ${compressed.originalCount} total, showing ${compressed.segments.length}]` : ''}:
-${JSON.stringify(enrichedForLLM, null, 2)}
+${JSON.stringify(enrichedForLLM, null, 2)}${scenesBlock}
 
-INSTRUCTIONS:
-- Select segments that are most relevant to the user's request
+ADDITIONAL INSTRUCTIONS:
 - Use BOTH the transcript text AND visual labels/context to determine relevance
-- A segment is MORE relevant when:
-  • The transcript text mentions the requested topic (high transcript score)
-  • Visual labels match the topic (e.g., "camera" label for a camera review request)
-  • Product is visible (product_visible in visualContext)
-  • A talking head is present when someone is explaining/reviewing (talking_head in visualContext)
+- A segment is MORE relevant when spoken content and visual content support each other
 - Prefer segments with HIGH combined scores
-- Think about narrative coherence: do the selected segments tell a mini-story when played together?
-- Prefer segments that contribute to a structure (hook → context → key point → conclusion) rather than random keyword matches
-- If multiple segments score equally, prefer the one with stronger visual or emotional impact
-- Be selective — only include segments that are clearly relevant and fit within the duration budget
-- Return ONLY a JSON array of objects with: index, start, end, text, relevance (brief reason)${targetDurationSeconds ? ', runningTotal (cumulative sum of dur values of all selected segments up to and including this one)' : ''}
-- If no segments match, return an empty array []
-- Return ONLY valid JSON, no markdown or explanation
+- Think about narrative coherence: do the kept sections tell a mini-story when played together?
+- Prefer a structure (hook → context → key point → conclusion) rather than random keyword matches
+- Be selective — only keep sections that are clearly relevant and engaging${targetDurationSeconds ? `\n- Each editPlan item must include a "runningTotal" field (cumulative duration sum)` : ''}
 
-RESPONSE (JSON array only):`;
+Return valid JSON in exactly this format:
+{
+  "editPlan": [
+    {
+      "index": number,
+      "start": number,
+      "end": number,
+      "text": "segment text",
+      "action": "keep",
+      "purpose": "intro | context | key_moment | conclusion",
+      "reason": "short reason"${targetDurationSeconds ? `,
+      "runningTotal": number` : ''}${hookFirstReorder ? `,
+      "priority": number (1-10, 1 = best hook)` : ''}
+    }
+  ],
+  "removeRanges": [
+    {
+      "start": number,
+      "end": number,
+      "reason": "short reason"
+    }
+  ]
+}
+
+Return ONLY valid JSON, no markdown or explanation.
+
+RESPONSE (JSON only):`;
     } else {
       // ── Standard transcript-only prompt ──
       const rawSegments = segments.map((seg: TranscriptSegment, i: number) => ({
@@ -318,29 +359,123 @@ RESPONSE (JSON array only):`;
         segmentsBlock = `TRANSCRIPTION SEGMENTS${compressed.compressionLevel > 0 ? ` [compressed: ${compressed.originalCount} total, showing ${compressed.segments.length}]` : ''}:\n${JSON.stringify(segmentsForLLM, null, 2)}`;
       }
 
-      llmPrompt = `You are a video editor assistant and creative director. Given a list of transcription segments with timestamps, identify which segments are relevant to the user's request. Think like a skilled editor selecting the best moments for a compelling clip, not a search engine matching keywords.
+      // Save segments data block for custom template injection
+      segmentsDataBlock = segmentsBlock;
 
-USER REQUEST: "${userQuery}"${durationInstruction}${keywordInstruction}${redundancyInstruction}${silenceInstruction}${hookInstruction}${feedbackInstruction}
+      llmPrompt = `You are an expert video editor.
 
-${segmentsBlock}
+Your job is to create an edit plan for a shorter final video.
 
-INSTRUCTIONS:
-- Select segments that are most relevant to the user's request
+You will receive:
+1. The user's editing instruction
+2. Timestamped transcript segments
+3. Timestamped scene analysis (if available)
+
+Use both the transcript and the scene information together.
+
+You must:
+- Understand the user's goal
+- Decide what sections should be KEPT
+- Decide what sections should be REMOVED
+- Prefer sections where spoken content and visual content support each other
+- Build a tighter and more engaging final structure
+
+Do NOT return summaries, recommendations, or extra notes.
+Only return editing decisions.
+
+USER PROMPT:
+"${userQuery}"${durationInstruction}${keywordInstruction}${hookInstruction}${feedbackInstruction}
+
+${segmentsBlock}${scenesBlock}
+
+ADDITIONAL INSTRUCTIONS:
 - Include segments that provide narrative context (intro/outro to the topic)
 - Prioritize segments that tell a coherent story when played in sequence
-- Prefer segments with stronger narrative moments, emotional impact, or viewer engagement over bland keyword matches
-- If the selected segments would feel disjointed when played together, add bridging context segments
-- Be selective — only include segments that are clearly relevant and fit within the duration budget
-- Return ONLY a JSON array of objects with: index, start, end, text, relevance (brief reason)${targetDurationSeconds ? ', runningTotal (cumulative sum of dur values of all selected segments up to and including this one)' : ''}
-- If no segments match, return an empty array []
-- Return ONLY valid JSON, no markdown or explanation
+- Prefer segments with stronger narrative moments, emotional impact, or viewer engagement
+- If the kept sections would feel disjointed when played together, add bridging context segments
+- Be selective — only keep sections that are clearly relevant and engaging${targetDurationSeconds ? `\n- Each editPlan item must include a "runningTotal" field (cumulative duration sum)` : ''}
 
-RESPONSE (JSON array only):`;
+Return valid JSON in exactly this format:
+{
+  "editPlan": [
+    {
+      "index": number,
+      "start": number,
+      "end": number,
+      "text": "segment text",
+      "action": "keep",
+      "purpose": "intro | context | key_moment | conclusion",
+      "reason": "short reason"${targetDurationSeconds ? `,
+      "runningTotal": number` : ''}${hookFirstReorder ? `,
+      "priority": number (1-10, 1 = best hook)` : ''}
+    }
+  ],
+  "removeRanges": [
+    {
+      "start": number,
+      "end": number,
+      "reason": "short reason"
+    }
+  ]
+}
+
+Return ONLY valid JSON, no markdown or explanation.
+
+RESPONSE (JSON only):`;
+    }
+
+    // ──────────────────────────────────────────────
+    // Custom template override: if frontend sent a prompt template, use it
+    // ──────────────────────────────────────────────
+    if (promptTemplate && typeof promptTemplate === 'string' && promptTemplate.trim()) {
+      // Build the USER PROMPT block with conditional instructions appended
+      const userPromptBlock = `"${userQuery}"${durationInstruction}${keywordInstruction}${hookInstruction}${feedbackInstruction}`;
+
+      let built = promptTemplate.replace('{{USER_PROMPT}}', userPromptBlock);
+
+      // Inject segments and scenes before ADDITIONAL INSTRUCTIONS marker
+      const dataInjection = `\n${segmentsDataBlock}${scenesBlock}\n\n`;
+      const aiMarkerIdx = built.indexOf('ADDITIONAL INSTRUCTIONS:');
+      if (aiMarkerIdx >= 0) {
+        built = built.slice(0, aiMarkerIdx) + dataInjection + built.slice(aiMarkerIdx);
+      } else {
+        // No marker found — append data before the JSON format spec
+        const jsonFormatIdx = built.indexOf('Return valid JSON');
+        if (jsonFormatIdx >= 0) {
+          built = built.slice(0, jsonFormatIdx) + dataInjection + built.slice(jsonFormatIdx);
+        } else {
+          built += dataInjection;
+        }
+      }
+
+      // Add runningTotal instruction if duration constraint is active
+      if (targetDurationSeconds && built.includes('ADDITIONAL INSTRUCTIONS:')) {
+        built = built.replace(
+          'ADDITIONAL INSTRUCTIONS:',
+          'ADDITIONAL INSTRUCTIONS:\n- Each editPlan item must include a "runningTotal" field (cumulative duration sum)'
+        );
+      }
+
+      // Ensure the prompt ends with the response trigger
+      if (!built.trimEnd().endsWith('RESPONSE (JSON only):')) {
+        built += '\n\nRESPONSE (JSON only):';
+      }
+
+      llmPrompt = built;
+      console.log('   📝 Using custom prompt template from frontend');
     }
 
     console.log(`\n📝 ── Final LLM Prompt (${llmPrompt.length} chars, ~${estimateTokens(llmPrompt).toLocaleString()} tokens) ──`);
     console.log(llmPrompt);
     console.log(`📝 ── End of Prompt ──\n`);
+
+    // Build a stripped version of the prompt for frontend debug display
+    // (removes the large segments JSON and scenes JSON to keep response size small)
+    const debugPrompt = llmPrompt
+      .replace(/ENRICHED SEGMENTS[\s\S]*?(?=\nADDITIONAL INSTRUCTIONS)/, 'ENRICHED SEGMENTS (transcript + visual analysis):\n[... segments omitted for brevity ...]\n\n')
+      .replace(/TRANSCRIPTION SEGMENTS[\s\S]*?(?=\nADDITIONAL INSTRUCTIONS)/, 'TRANSCRIPTION SEGMENTS:\n[... segments omitted for brevity ...]\n\n')
+      .replace(/CONDENSED VIDEO SUMMARY[\s\S]*?(?=\nADDITIONAL INSTRUCTIONS)/, 'CONDENSED VIDEO SUMMARY:\n[... summary omitted for brevity ...]\n\n')
+      .replace(/\nSCENES:\n\[[\s\S]*?\]/, '\nSCENES:\n[... scenes omitted for brevity ...]');
 
     // ──────────────────────────────────────────────
     // LLM call with duration retry logic
@@ -349,12 +484,11 @@ RESPONSE (JSON array only):`;
     // Max 2 retries (3 total attempts).
     // ──────────────────────────────────────────────
 
-    const systemMessage = useMultimodal
-      ? 'You are a precise video editing assistant and creative director with access to both transcript and visual analysis data. Select segments that create a compelling narrative — think like an editor, not a search engine. You MUST stay within the duration budget. You respond ONLY with valid JSON arrays. No markdown, no explanation.'
-      : 'You are a precise video editing assistant and creative director. Select segments that create a compelling narrative — think like an editor, not a search engine. You MUST stay within the duration budget. You respond ONLY with valid JSON arrays. No markdown, no explanation.';
+    const systemMessage = 'You are an expert video editor. Your job is to create edit plans for shorter, more engaging final videos. You use both transcript and scene analysis to make editing decisions. You respond ONLY with valid JSON containing editPlan and removeRanges. No markdown, no explanation.';
 
     const MAX_DURATION_RETRIES = 2;
     let identifiedSegments: IdentifiedSegment[] = [];
+    let lastLlmContent = '';  // Track last raw LLM response for debug display
     let conversationMessages: Array<{ role: string; content: string }> = [
       { role: 'system', content: systemMessage },
       { role: 'user', content: llmPrompt },
@@ -391,16 +525,56 @@ RESPONSE (JSON array only):`;
       }
 
       const llmResult = await llmResponse.json();
-      const llmContent = llmResult.choices?.[0]?.message?.content?.trim() || '[]';
+      const llmContent = llmResult.choices?.[0]?.message?.content?.trim() || '{}';
+      lastLlmContent = llmContent;
+
+      console.log(`\n📨 ── Raw LLM Response (Attempt ${attempt + 1}) ──`);
+      console.log(llmContent);
+      console.log(`📨 ── End Raw LLM Response ──\n`);
 
       try {
         const cleaned = llmContent
           .replace(/```json?\n?/g, '')
           .replace(/```\n?/g, '')
           .trim();
-        identifiedSegments = JSON.parse(cleaned);
-      } catch {
+        const parsed = JSON.parse(cleaned);
+
+        console.log(`🔍 Parsed response type: ${typeof parsed}, isArray: ${Array.isArray(parsed)}`);
+        console.log(`🔍 Has editPlan: ${!!parsed.editPlan}, editPlan isArray: ${Array.isArray(parsed.editPlan)}`);
+        console.log(`🔍 Has removeRanges: ${!!parsed.removeRanges}`);
+
+        // Handle new editPlan format from the expert video editor prompt
+        if (parsed.editPlan && Array.isArray(parsed.editPlan)) {
+          console.log(`🔍 editPlan items: ${parsed.editPlan.length}`);
+          parsed.editPlan.forEach((item: any, i: number) => {
+            console.log(`   [${i}] action="${item.action}" start=${item.start} end=${item.end} purpose="${item.purpose}" reason="${(item.reason || '').substring(0, 80)}"`);
+          });
+
+          const keepItems = parsed.editPlan.filter((item: any) => item.action === 'keep');
+          console.log(`🔍 Items with action="keep": ${keepItems.length} / ${parsed.editPlan.length}`);
+
+          identifiedSegments = keepItems
+            .map((item: any) => ({
+              index: item.index ?? 0,
+              start: item.start,
+              end: item.end,
+              text: item.text || '',
+              relevance: `[${item.purpose || 'keep'}] ${item.reason || ''}`,
+              runningTotal: item.runningTotal,
+              priority: item.priority,
+            }));
+        } else if (Array.isArray(parsed)) {
+          console.log(`🔍 Flat array response: ${parsed.length} items`);
+          // Backward compatibility: if LLM still returns a flat array
+          identifiedSegments = parsed;
+        } else {
+          console.log(`⚠️ Unexpected response structure. Keys: ${Object.keys(parsed).join(', ')}`);
+          console.log(`⚠️ Full parsed object:`, JSON.stringify(parsed).substring(0, 500));
+          identifiedSegments = [];
+        }
+      } catch (parseErr) {
         console.error('❌ Failed to parse LLM response:', llmContent);
+        console.error('❌ Parse error:', parseErr);
         if (isRetry) break; // Don't fail on retry parse errors, use previous result
         return NextResponse.json(
           { error: 'AI returned invalid response. Please try again.' },
@@ -408,11 +582,16 @@ RESPONSE (JSON array only):`;
         );
       }
 
-      if (!Array.isArray(identifiedSegments) || identifiedSegments.length === 0) {
+      console.log(`✅ Final identifiedSegments count: ${identifiedSegments.length}`);
+
+      if (identifiedSegments.length === 0) {
+        console.log(`⚠️ No segments identified — returning empty result to frontend`);
         return NextResponse.json({
           success: true,
           clips: [],
           message: 'No segments matched your query. Try a broader description.',
+          debugPrompt,
+          debugLlmResponse: lastLlmContent,
         });
       }
 
@@ -439,17 +618,17 @@ RESPONSE (JSON array only):`;
 
       // Over budget — need retry
       if (attempt < MAX_DURATION_RETRIES) {
-        const retryMessage = `Your selection totals ${llmTotalDuration.toFixed(1)} seconds of content, but the HARD LIMIT is ${targetDurationSeconds} seconds. That is ${((llmTotalDuration / targetDurationSeconds) * 100).toFixed(0)}% of the budget — too much.
+        const retryMessage = `Your edit plan totals ${llmTotalDuration.toFixed(1)} seconds of kept content, but the HARD LIMIT is ${targetDurationSeconds} seconds. That is ${((llmTotalDuration / targetDurationSeconds) * 100).toFixed(0)}% of the budget — too much.
 
-Here is what you selected (with durations):
+Here is what you kept (with durations):
 ${identifiedSegments.map(s => `- [${s.index}] ${s.start}s–${s.end}s (${(s.end - s.start).toFixed(1)}s): "${s.text.substring(0, 80)}..."`).join('\n')}
 
 You MUST cut this down to fit within ${targetDurationSeconds} seconds total. This is a hard constraint that cannot be exceeded.
-- Remove the least essential segments
-- Keep only the absolute best highlights for the user's query
-- The final runningTotal of the last segment MUST be ≤ ${targetDurationSeconds}
+- Move the least essential sections from editPlan to removeRanges
+- Keep only the absolute strongest moments for the user's goal
+- The final runningTotal of the last editPlan item MUST be ≤ ${targetDurationSeconds}
 
-Return the reduced JSON array:`;
+Return the reduced JSON with editPlan and removeRanges:`;
 
         // Add assistant response + correction to conversation
         conversationMessages.push({ role: 'assistant', content: llmContent });
@@ -601,6 +780,8 @@ Return the reduced JSON array:`;
       totalDuration: +totalDuration.toFixed(1),
       targetDuration: targetDurationSeconds,
       clips,
+      debugPrompt,
+      debugLlmResponse: lastLlmContent,
     });
   } catch (error: any) {
     console.error('❌ Generate clips error:', error);
