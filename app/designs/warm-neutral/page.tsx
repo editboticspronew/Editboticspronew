@@ -56,7 +56,7 @@ export default function WarmNeutralDesign() {
         <Container maxWidth="lg">
           <Box sx={{ display: 'flex', alignItems: 'center', height: 60, gap: 4 }}>
             <Typography variant="body1" fontWeight={700} sx={{ letterSpacing: '-0.01em' }}>
-              EditBotics
+              ClipWeave
             </Typography>
             <Box sx={{ flexGrow: 1 }} />
             {['Features', 'Pricing', 'Blog'].map((t) => (

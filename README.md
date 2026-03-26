@@ -1,4 +1,4 @@
-# EditBotics Pro - Next.js Edition
+# ClipWeave - Next.js Edition
 
 AI-powered video editing platform built with Next.js, Firebase, and Material-UI.
 
@@ -23,7 +23,7 @@ Open [http://localhost:3000](http://localhost:3000) to view the application.
 ## 📁 Project Structure
 
 ```
-editboticsnext/
+clipweave/
 ├── app/                 # Next.js pages (App Router)
 ├── components/          # Reusable components
 ├── hooks/              # Custom React hooks
@@ -132,4 +132,4 @@ Private - All rights reserved
 
 ---
 
-**Note**: This is the Next.js migration of EditBotics Pro. The original React Router app remains in the parent directory.
+**Note**: This is the Next.js migration of ClipWeave. The original React Router app remains in the parent directory.

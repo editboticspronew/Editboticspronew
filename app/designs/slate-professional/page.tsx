@@ -76,7 +76,7 @@ export default function SlateProfessionalDesign() {
                 <PlayArrow sx={{ fontSize: 16, color: '#fff' }} />
               </Box>
               <Typography variant="body1" fontWeight={700} color="#fff" letterSpacing="-0.01em">
-                EditBotics Pro
+                ClipWeave
               </Typography>
             </Box>
             <Box sx={{ flexGrow: 1 }} />
@@ -173,7 +173,7 @@ export default function SlateProfessionalDesign() {
                 <Box sx={{ width: 24, height: 24, borderRadius: 1, bgcolor: C.accent, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <PlayArrow sx={{ fontSize: 14, color: '#fff' }} />
                 </Box>
-                <Typography variant="body2" fontWeight={700} color="#fff">EditBotics</Typography>
+                <Typography variant="body2" fontWeight={700} color="#fff">ClipWeave</Typography>
               </Box>
 
               {sidebarItems.map((item) => (

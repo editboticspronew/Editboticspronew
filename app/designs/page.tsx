@@ -67,7 +67,7 @@ export default function DesignPickerPage() {
             Design Review
           </Typography>
           <Typography variant="h6" sx={{ color: '#666', fontWeight: 400 }}>
-            5 design directions for EditBotics Pro — click to preview each
+            5 design directions for ClipWeave — click to preview each
           </Typography>
         </Box>
 

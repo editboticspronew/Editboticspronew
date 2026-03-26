@@ -1,4 +1,4 @@
-# EditBotics Pro - Next.js Setup Summary
+# ClipWeave - Next.js Setup Summary
 
 ## ✅ Completed Tasks
 
@@ -285,7 +285,7 @@ lib/utils/videoExport.ts
 
 ### Development
 ```bash
-cd editboticsnext
+cd clipweave
 npm run dev
 ```
 Access at: `http://localhost:3000` (or next available port)
@@ -332,7 +332,7 @@ npm start
 
 | Aspect | React Router App | Next.js App |
 |--------|-----------------|-------------|
-| **Location** | `d:/EditBoticsPro` | `d:/EditBoticsPro/editboticsnext` |
+| **Location** | `d:/EditBoticsPro` | `d:/EditBoticsPro/clipweave` |
 | **Framework** | React Router 7 | Next.js 16 |
 | **Routing** | File-based in `app/routes/` | App Router in `app/` |
 | **Rendering** | Client-side only | Server + Client components |

@@ -54,7 +54,7 @@ export default function MinimalMonoDesign() {
         <Container maxWidth="lg">
           <Box sx={{ display: 'flex', alignItems: 'center', height: 56, gap: 4 }}>
             <Typography variant="body1" fontWeight={700} letterSpacing="-0.02em">
-              EditBotics
+              ClipWeave
             </Typography>
             <Box sx={{ flexGrow: 1 }} />
             {['Product', 'Pricing', 'Docs'].map((item) => (

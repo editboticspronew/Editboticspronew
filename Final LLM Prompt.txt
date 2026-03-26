@@ -1,0 +1,248 @@
+📝 ── Final LLM Prompt (13868 chars) ──
+You are a video editor assistant. Given a list of transcription segments with timestamps, identify which segments are relevant to the user's request.
+
+USER REQUEST: "i want to generate the camera review of this phone"
+
+DURATION CONSTRAINT: total duration of all the clips combined should be around 1 minutes
+IMPORTANT: The user wants the total combined duration of ALL selected clips to fit within this time constraint. Calculate the total duration of your selected segments (sum of end-start for each) and ensure it approximately matches the requested duration. Be selective — pick only the most relevant and impactful segments that fit within the time budget. If you must choose between segments, prefer the ones with the highest relevance to the user's query.
+
+REDUNDANCY ELIMINATION: If multiple segments cover the exact same topic, point, or repeated content, pick only the MOST concise and clear version. Do not include near-duplicate segments that restate the same information.    
+
+SILENCE & FILLER TRIMMING: Exclude segments that are primarily filler words ("um", "uh", "like", "you know", "so", "basically"), long pauses, or dead air. When a segment contains filler at the start or end, tighten the start/end timestamps to skip the filler portion. Prefer clean, concise segments without verbal hesitations.
+
+TRANSCRIPTION SEGMENTS:
+[
+  {
+    "index": 0,
+    "start": 10.1,
+    "end": 16,
+    "text": "Here is the Samsung Galaxy S 25. The smallest model of this year's S-Series flagships."
+  },
+  {
+    "index": 1,
+    "start": 17,
+    "end": 24.7,
+    "text": "Has Samsung produced a compact Flagship worth getting this year, and we'll for GSM Arena and let's find out in our galaxy has 25 review."
+  },
+  {
+    "index": 2,
+    "start": 29.9,
+    "end": 59.5,
+    "text": "Samsung isn't breaking the mold with the galaxy has 25 rather than enticing customers with visual changes or higher numbers on the spec sheet, they're sticking to last year's tried-and-true formula on paper. The only upgrade here is the new chipset but let's see if there's more than that. The design is slightly more refined. Well as in the phone is a whole 0.4 mm thinner which you can't really notice but the phone does feel nicely slim and compact in the hand like before the flat back panel is made of Gorilla Glass."
+  },
+  {
+    "index": 3,
+    "start": 59.7,
+    "end": 75.6,
+    "text": "Victor's to and the frame is made of 2nd gen armor. Aluminum Samsung is still holding back from trickling down the anti-reflective gorilla armored glass that it uses for the ultra as ever. You get ip68 rating rest protection on the Galaxy S 25 against dust and water submersion."
+  },
+  {
+    "index": 4,
+    "start": 77.1,
+    "end": 103.1,
+    "text": "The display of the phone is a 6.2 inch ltp. Oh oh let with a 1080p resolution Gorilla Glass victus to protection and a 120 HZ refresh rate it's just the same as last year. There isn't even a boost in the max brightness but it's not like the previous model really needed. One on the Galaxy S 25. We measured a maximum of around 715. It's with the manual slider and this could boost in nearly 1,400 is an auto mode that's plenty for comfy use Outdoors."
+  },
+  {
+    "index": 5,
+    "start": 104.4,
+    "end": 111.1,
+    "text": "The display looks good with plenty of sharpness, and contrast, and their support for HDR 10 plus video content, as well."
+  },
+  {
+    "index": 6,
+    "start": 112.1,
+    "end": 124,
+    "text": "And thanks to ltp otech. The screen refresh rate is extra adaptive to save energy. When idling the s25 can dial down from his smooth. 120 hertz to 24 Hertz or slow as one Hertz in certain scenarios."
+  },
+  {
+    "index": 7,
+    "start": 126,
+    "end": 137,
+    "text": "For audio. The galaxy has 25 has a pair of stereo speakers. There's slightly less loud than last year still earning a rating of good but the sound seems richer now with a little more bass. Let's have a listen." 
+  },
+  {
+    "index": 8,
+    "start": 154.4,
+    "end": 171.4,
+    "text": "To wake up and unlock the phone. The s25 has an under display ultrasonic fingerprint reader, it's really fast and reliable, and you can get the Galaxy as 25 with 128, 256 or 512 gigs of storage on board. And 12, gigs of RAM, comes standard with All Storage tiers."
+  },
+  {
+    "index": 9,
+    "start": 172.5,
+    "end": 182.7,
+    "text": "In the place of exciting, new hardware changes Samsung has focused on new software features for his Galaxy as 25 series. All of them come with the new one uy7 based on Android 15."
+  },
+  {
+    "index": 10,
+    "start": 184.1,
+    "end": 213.5,
+    "text": "It brings changes like splitting the notification shade into two separate pages accessible by swiping from the top corners of the phone. However, the main updates here are in the AI based features. The system can understand natural language input, so you can search the settings or gallery for a particular thing, you're looking for and an exciting. New development is something called cross app action. You can ask the Gemini AI assistant to do complex tasks, that involve multiple apps, Google and Samsung apps are supported for now"
+  },
+  {
+    "index": 11,
+    "start": 214.8,
+    "end": 220.9,
+    "text": "The circle desertion or face has been updated with a function that can analyze music that's playing and give you info about the song."
+  },
+  {
+    "index": 12,
+    "start": 223.1,
+    "end": 228.5,
+    "text": "Other AI based features include now brief. It will give you a summary and stats of your daily schedule."
+  },
+  {
+    "index": 13,
+    "start": 230.7,
+    "end": 236.1,
+    "text": "Of course, there are AI based writing tools, like summarization of text and writing assistant."    
+  },
+  {
+    "index": 14,
+    "start": 237.7,
+    "end": 245,
+    "text": "And the galleries generative edit is quite powerful. You can add or remove and even resize people and objects in your photos."
+  },
+  {
+    "index": 15,
+    "start": 246.1,
+    "end": 252.6,
+    "text": "There's plenty of software support to Samsung promises seven years of OS updates and seven years of security patches."
+  },
+  {
+    "index": 16,
+    "start": 253.8,
+    "end": 279.6,
+    "text": "Unlike last year the galaxy has 25 gets the same chipset in all markets. The Snapdragon a delete is the premium Qualcomm chip set for this year's flagships NDS, 25 gets an enhanced version for Galaxy with higher clock speeds. There's a significant jump in performance compared to the Galaxy S, 24, an invention marks, the galaxy has 25 scores chart-topping, results across the board. The phone feels just as fast and snappy as you'd expect a flagship to be."
+  },
+  {
+    "index": 17,
+    "start": 281.4,
+    "end": 307.9,
+    "text": "The thermal management is also along the lines of your typical Flagship. That is not great in our prolonged stress. Test, the s25, despite heavy thermal throttling down to around half of the Peak Performance. Yes, 25 has a four thousand milliamp hour battery just like last year, despite the change in chipset, the battery life has stayed about the same with an overall Act of you score of 12 hours and 21 minutes. It's solid for the battery size but nothing too exciting. Overall"
+  },
+  {
+    "index": 18,
+    "start": 308.9,
+    "end": 335.7,
+    "text": "Yes, 25 again supports 25, watt charging, and there's no treasure in the box with a proper adapter. Recharge, the phone from zero to fifty six percent in half an hour, and a full charge took an hour and 17 minutes. There's also support for wireless charging here. In fact, the phone is chi 2.1 ready but it lacks the magnets inside. So you need to use a case that has them and even then charging speed is still rated at just 15 watts."
+  },
+  {
+    "index": 19,
+    "start": 336.4,
+    "end": 345.4,
+    "text": "The cameras of the s25 include a 50 megapixel main can a 10 megapixel three times zoom and a 12 megapixel ultra-wide can no updates over last year."
+  },
+  {
+    "index": 20,
+    "start": 346.7,
+    "end": 370,
+    "text": "However, there could be changes in the camera performance. Thanks to the new chipset and AI processing. Let's find out during the day, the photos are clean with a good amount of detail wide dynamic range and Punchy yet. Not over the top colors. However, nowadays competing camera phones can do better when it comes to sharpness, we may have praised these photos two or three years ago. But the industry is moving at a rapid pace."     
+  },
+  {
+    "index": 21,
+    "start": 371.6,
+    "end": 388.8,
+    "text": "At night, the phone can use automatic night mode processing but in most cases, the system will prefer the standard photo mode. Unless it's very dark. The regular nighttime photos have a laid-back processing with good highlight retention, but not very bright Shadows, there's plenty of noise to and the color rendition is nice."
+  },
+  {
+    "index": 22,
+    "start": 390.4,
+    "end": 400.7,
+    "text": "Forcing the night mode on, cleans up the noise and boost sharpness, and contrast. There's also an aggressive increase in micro contrast but the results are still an improvement in certain scenes."
+  },
+  {
+    "index": 23,
+    "start": 402.6,
+    "end": 421.5,
+    "text": "The three times telephoto can produce has decent daytime photos which match the main cameras processing, in terms of colors, and contrast, however, sharpness and fine detail. Leave more to be desired. The zoom camera seems to be struggling at night. The photos aren't the sharpest and they're very noisy with washed out colors."
+  },
+  {
+    "index": 24,
+    "start": 423.1,
+    "end": 430.2,
+    "text": "The night mode brings out a bit more detail. Fixes the color saturation and brightens up the Shadows. But the end result is still far from ideal."
+  },
+  {
+    "index": 25,
+    "start": 431.4,
+    "end": 442.8,
+    "text": "When it comes to the ultra-wide cam, we fear, we might have gotten a lemon. The camera has fixed focus and it's possible that this one may have a misaligned lens. This effect sharpness unevenly, even in the center of the frame,"
+  },
+  {
+    "index": 26,
+    "start": 444.3,
+    "end": 453.6,
+    "text": "Here's a comparison with yes. 25 plus has supposedly identical, ultra white can, there we see the definition is much better and the overall processing seems to nicely match the main cameras."
+  },
+  {
+    "index": 27,
+    "start": 455.4,
+    "end": 461.8,
+    "text": "Due to the misalign focus, we already mentioned the ultra-wide cameras low-light photos are let down due to their poor sharpness."
+  },
+  {
+    "index": 28,
+    "start": 463.3,
+    "end": 492,
+    "text": "Here are again a few samples from the Galaxy as 25 plus to show you what this camera is supposed to be capable of you, get nice definition and very good dynamic range. Regardless of whether we use the auto mode or Force the night mode on, there's no change in the selfie camera this year, which is a good thing because we like the Selfies from the s24 and we appreciate the autofocus, the subject is always well exposed and you get natural skin tones. Excellent colors wide dynamic, range. And plenty of detail to go."
+  },
+  {
+    "index": 29,
+    "start": 492.2,
+    "end": 492.8,
+    "text": "Around."
+  },
+  {
+    "index": 30,
+    "start": 494,
+    "end": 511.7,
+    "text": "All four cameras on the galaxy has 25 can record videos and up to 4K 60fps and the main Camp can do 8K recording, 24K clips from the main camera are clean, sharp, and detailed with wide dynamic range. Good contrast and Punchy colors, it easily holds up to the flagship standard"
+  },
+  {
+    "index": 31,
+    "start": 512.8,
+    "end": 520.5,
+    "text": "The three times you and video is very detailed decently sharp and has a wide dynamic range. We also like the color reproduction and the clean look."
+  },
+  {
+    "index": 32,
+    "start": 522.9,
+    "end": 532.4,
+    "text": "The ultra wide camera on our unit produces somewhat soft looking video. So here's one from yes, 25 plus, instead it looks nice with okay, dynamic range and good colors."
+  },
+  {
+    "index": 33,
+    "start": 534,
+    "end": 539.7,
+    "text": "The electronic stabilization works. Great here. It's some of the best around footage comes out, very smooth."
+  },
+  {
+    "index": 34,
+    "start": 542.3,
+    "end": 550.9,
+    "text": "And at night, the main cam can record, nice videos with plenty of detail and decent noise reduction. However, we've seen slightly better clips from competing phones,"
+  },
+  {
+    "index": 35,
+    "start": 553.5,
+    "end": 580.2,
+    "text": "So there you have it guys. The Samsung Galaxy, S 25, its overall a solid compact Flagship with the same features. We like last year however Samsung is acting like there was no need for any updates and there are definitely improvements that could have been made here. The charging speed isn't fast and the cameras are starting to feel outdated competitors. Have better battery life to. So while the galaxy has 25 is a good phone Samsung's. Vanilla Flagship is hard to recommend this time around."
+  },
+  {
+    "index": 36,
+    "start": 581.2,
+    "end": 592.9,
+    "text": "Thanks for watching, guys. If you're looking for Alternatives, when you can check out, is the Google pixel 9 Pro, and another solid competitor is the iPhone 16. Let us know what you think, and I'll see you on the next one."
+  }
+]
+
+INSTRUCTIONS:
+- Select segments that are relevant to the user's request
+- Include segments that provide context (intro/outro to the topic)
+- Be inclusive rather than exclusive — it's better to include slightly extra content than to cut important parts
+- Return ONLY a JSON array of objects with: index, start, end, text, relevance (brief reason why this segment is relevant)
+- If no segments match, return an empty array []
+- Return ONLY valid JSON, no markdown or explanation
+
+RESPONSE (JSON array only):
+📝 ── End of Prompt ──

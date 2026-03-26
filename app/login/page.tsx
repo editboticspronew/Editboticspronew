@@ -95,7 +95,7 @@ export default function LoginPage() {
             color="text.secondary"
             sx={{ mb: 3 }}
           >
-            Sign in to continue to EditBotics Pro
+            Sign in to continue to ClipWeave
           </Typography>
 
           {error && (

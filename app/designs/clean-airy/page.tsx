@@ -64,7 +64,7 @@ export default function CleanAiryDesign() {
               <Box sx={{ width: 30, height: 30, borderRadius: 2, bgcolor: C.accent, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <PlayArrow sx={{ fontSize: 18, color: '#fff' }} />
               </Box>
-              <Typography variant="body1" fontWeight={700} letterSpacing="-0.01em">EditBotics</Typography>
+              <Typography variant="body1" fontWeight={700} letterSpacing="-0.01em">ClipWeave</Typography>
             </Box>
             <Box sx={{ flexGrow: 1 }} />
             {['Features', 'Pricing', 'Resources'].map((t) => (

@@ -1,7 +1,7 @@
 # Migration Plan: React Router → Next.js
 
 ## Overview
-Migrating EditBotics Pro from React Router to Next.js while preserving all functionality and mobile responsiveness.
+Migrating ClipWeave from React Router to Next.js while preserving all functionality and mobile responsiveness.
 
 ## Key Differences & Adaptations
 
@@ -47,7 +47,7 @@ Migrating EditBotics Pro from React Router to Next.js while preserving all funct
 ## Folder Structure
 
 ```
-editboticsnext/
+clipweave/
 ├── app/
 │   ├── layout.tsx (root layout with providers)
 │   ├── page.tsx (home)

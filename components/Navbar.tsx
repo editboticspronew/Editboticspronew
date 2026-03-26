@@ -86,7 +86,7 @@ export function Navbar() {
     <Box sx={{ textAlign: 'center', bgcolor: 'background.paper', height: '100%' }}>
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1, py: 2.5 }}>
         <Circle sx={{ fontSize: 8, color: 'primary.main' }} />
-        <Typography variant="body1" fontWeight={700}>EditBotics Pro</Typography>
+        <Typography variant="body1" fontWeight={700}>ClipWeave</Typography>
       </Box>
       <Divider />
       <List>
@@ -151,7 +151,7 @@ export function Navbar() {
               variant="body1"
               sx={{ fontWeight: 700, letterSpacing: '-0.01em' }}
             >
-              EditBotics Pro
+              ClipWeave
             </Typography>
           </Box>
 

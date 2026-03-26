@@ -1,4 +1,4 @@
-export const APP_NAME = 'EditBotics Pro';
+export const APP_NAME = 'ClipWeave';
 export const APP_VERSION = '2.0.0';
 
 // OpenAI API Configuration

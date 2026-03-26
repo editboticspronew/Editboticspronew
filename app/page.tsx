@@ -276,7 +276,7 @@ export default function HomePage() {
               Ready to Create?
             </Typography>
             <Typography variant="body1" color="text.secondary" sx={{ mb: 4 }}>
-              Join thousands of creators using EditBotics Pro
+              Join thousands of creators using ClipWeave
             </Typography>
             <Button
               variant="contained"

@@ -12,10 +12,10 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "EditBotics Pro - AI Video Editor",
+  title: "ClipWeave - AI Video Editor",
   description: "Professional AI-powered video editing platform",
   keywords: ["video editor", "AI", "editing", "transcription", "timeline"],
-  authors: [{ name: "EditBotics Team" }],
+  authors: [{ name: "ClipWeave Team" }],
   viewport: "width=device-width, initial-scale=1, maximum-scale=1",
 };
 

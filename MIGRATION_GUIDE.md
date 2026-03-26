@@ -1,8 +1,8 @@
-# Next.js Migration Guide for EditBotics Pro
+# Next.js Migration Guide for ClipWeave
 
 ## Project Overview
 
-Successfully migrated EditBotics Pro from React Router to Next.js App Router while maintaining all functionality.
+Successfully migrated ClipWeave from React Router to Next.js App Router while maintaining all functionality.
 
 ## ✅ Completed Setup
 
@@ -235,7 +235,7 @@ const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
 ```bash
 # Start development server
-cd editboticsnext
+cd clipweave
 npm run dev
 
 # Build for production

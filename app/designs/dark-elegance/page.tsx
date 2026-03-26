@@ -61,7 +61,7 @@ export default function DarkEleganceDesign() {
           <Box sx={{ display: 'flex', alignItems: 'center', height: 56, gap: 4 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: C.accent }} />
-              <Typography variant="body2" fontWeight={700} letterSpacing="-0.01em">EditBotics</Typography>
+              <Typography variant="body2" fontWeight={700} letterSpacing="-0.01em">ClipWeave</Typography>
             </Box>
             <Box sx={{ flexGrow: 1 }} />
             {['Docs', 'Pricing', 'Changelog'].map((t) => (
