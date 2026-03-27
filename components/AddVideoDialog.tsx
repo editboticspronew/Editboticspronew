@@ -42,11 +42,7 @@ import {
   CloudUpload,
   SmartToy,
   ExpandMore,
-  AutoFixHigh,
-  Download,
-  PlayArrow,
-  Visibility,
-  Code,
+  AutoFixHigh,
   Movie,
   Mic,
   Campaign,
@@ -130,7 +126,7 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const dispatch = useAppDispatch();
-  const [step, setStep] = useState<'type' | 'upload' | 'selected' | 'uploading' | 'transcribe' | 'analyze' | 'recommend' | 'review-prompt'>('type');
+  const [step, setStep] = useState<'type' | 'upload' | 'selected' | 'uploading' | 'transcribe' | 'analyze' | 'recommend'>('type');
   const [selectedType, setSelectedType] = useState<string>('');
   const [selectedFile, setSelectedFile] = useState<File | null>(preSelectedFile || null);
   const [firebaseUrl, setFirebaseUrl] = useState<string>(''); // Firebase Storage URL
@@ -149,26 +145,7 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
   // Video analysis features (frame-heavy features unchecked by default)
   const [selectedFeatures, setSelectedFeatures] = useState<string[]>(DEFAULT_FEATURES);
 
-  // Auto-edit state
-  const [autoEditing, setAutoEditing] = useState(false);
-  const [autoEditProgress, setAutoEditProgress] = useState('');
-  const [autoEditClips, setAutoEditClips] = useState<any[]>([]);
-  const [autoEditStats, setAutoEditStats] = useState<any>(null);
-  const [mergedVideo, setMergedVideo] = useState<{ blob: Blob; objectUrl: string; fileSize: number } | null>(null);
-  const [autoEditError, setAutoEditError] = useState('');
 
-  // Prompt preview state
-  const [promptPreview, setPromptPreview] = useState<{
-    systemPrompt: string;
-    userPrompt: string;
-    estimatedTokens: number;
-    compressionLevel: number;
-    compressionNote: string;
-    programType: string;
-    segmentCount: number;
-    twoPassUsed: boolean;
-  } | null>(null);
-  const [loadingPromptPreview, setLoadingPromptPreview] = useState(false);
 
   // Video quality / downscale state
   const [videoResolution, setVideoResolution] = useState<VideoResolution | null>(null);
@@ -206,29 +183,18 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
         setGsPath('');
         setSavedDocId('');
         setSelectedFeatures(DEFAULT_FEATURES);
-        setAutoEditing(false);
-        setAutoEditProgress('');
-        setAutoEditClips([]);
-        setAutoEditStats(null);
-        setAutoEditError('');
-        setPromptPreview(null);
-        setLoadingPromptPreview(false);
         setVideoResolution(null);
         setQualityOptions([]);
         setSelectedQuality('original');
         setTranscoding(false);
         setTranscodeProgress(null);
-        if (mergedVideo) {
-          try { URL.revokeObjectURL(mergedVideo.objectUrl); } catch { /* ignore */ }
-        }
-        setMergedVideo(null);
       }, 300);
       return () => clearTimeout(timer);
     }
   }, [open, preSelectedFile]);
 
   const handleClose = () => {
-    if (!transcribing && !uploading && !analyzing && !autoEditing) {
+    if (!transcribing && !uploading && !analyzing) {
       setStep('type');
       setSelectedType('');
       setSelectedFile(null);
@@ -243,20 +209,11 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
       setGsPath('');
       setSavedDocId('');
       setSelectedFeatures(DEFAULT_FEATURES);
-      setAutoEditing(false);
-      setAutoEditProgress('');
-      setAutoEditClips([]);
-      setAutoEditStats(null);
-      setAutoEditError('');
       setVideoResolution(null);
       setQualityOptions([]);
       setSelectedQuality('original');
       setTranscoding(false);
       setTranscodeProgress(null);
-      if (mergedVideo) {
-        try { URL.revokeObjectURL(mergedVideo.objectUrl); } catch { /* ignore */ }
-      }
-      setMergedVideo(null);
       onClose();
     }
   };
@@ -503,163 +460,7 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
     }
   };
 
-  const handlePreviewPrompt = async () => {
-    if (!analysis) return;
-
-    setLoadingPromptPreview(true);
-    setError('');
-
-    try {
-      const response = await fetch('/api/auto-edit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          analysis: analysis.analysis,
-          transcriptionSegments,
-          videoType: selectedType,
-          recommendations: analysis.recommendations,
-          previewOnly: true,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to build prompt preview');
-      }
-
-      setPromptPreview({
-        systemPrompt: data.systemPrompt,
-        userPrompt: data.userPrompt,
-        estimatedTokens: data.estimatedTokens,
-        compressionLevel: data.compressionLevel,
-        compressionNote: data.compressionNote,
-        programType: data.programType,
-        segmentCount: data.segmentCount,
-        twoPassUsed: data.twoPassUsed,
-      });
-
-      setStep('review-prompt');
-    } catch (err: any) {
-      console.error('Prompt preview error:', err);
-      setError(err.message || 'Failed to build prompt preview');
-    } finally {
-      setLoadingPromptPreview(false);
-    }
-  };
-
-  const handleAutoEdit = async () => {
-    if (!analysis || !firebaseUrl) return;
-
-    setAutoEditing(true);
-    setAutoEditProgress('Generating edit commands with AI...');
-    setAutoEditError('');
-    setAutoEditClips([]);
-    setAutoEditStats(null);
-    if (mergedVideo) {
-      try { URL.revokeObjectURL(mergedVideo.objectUrl); } catch { /* ignore */ }
-    }
-    setMergedVideo(null);
-
-    try {
-      // Step 1: Call auto-edit API to get clip definitions
-      const response = await fetch('/api/auto-edit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          analysis: analysis.analysis,
-          transcriptionSegments,
-          videoType: selectedType,
-          recommendations: analysis.recommendations,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to generate edit commands');
-      }
-
-      if (!data.clips || data.clips.length === 0) {
-        setAutoEditError(data.message || 'AI could not determine edit points. The video may not need editing.');
-        setAutoEditing(false);
-        setAutoEditProgress('');
-        return;
-      }
-
-      setAutoEditClips(data.clips);
-      setAutoEditStats(data.stats);
-      setAutoEditProgress(`Found ${data.clips.length} clip(s). Loading FFmpeg...`);
-
-      // Step 2: Clip the video using FFmpeg WASM
-      const { clipVideo } = await import('@/lib/video/clipVideo');
-      const clipResults = await clipVideo(
-        firebaseUrl,
-        data.clips,
-        (p) => setAutoEditProgress(p.message)
-      );
-
-      if (clipResults.length === 0) {
-        throw new Error('Failed to clip video. Please try again.');
-      }
-
-      // Step 3: Merge all clips into a single final video
-      setAutoEditProgress(`Merging ${clipResults.length} clips into final video...`);
-      const { mergeClips } = await import('@/lib/video/clipVideo');
-      const merged = await mergeClips(
-        clipResults,
-        (p: any) => setAutoEditProgress(p.message),
-        { transition: 'fade', transitionDuration: 0.5 }
-      );
-
-      // Revoke individual clip URLs to free memory
-      clipResults.forEach((clip) => {
-        try { URL.revokeObjectURL(clip.objectUrl); } catch { /* ignore */ }
-      });
-
-      setMergedVideo(merged);
-      setAutoEditProgress('');
-
-      // Save auto-edit metadata to database
-      if (savedDocId) {
-        try {
-          await dispatch(
-            updateProjectFileMetadata({
-              fileId: savedDocId,
-              updates: {
-                autoEdit: {
-                  clips: data.clips,
-                  stats: data.stats,
-                  generatedAt: new Date().toISOString(),
-                },
-              },
-            })
-          ).unwrap();
-          console.log('Auto-edit metadata saved to database');
-        } catch (dbErr: any) {
-          console.error('âš ï¸ Failed to save auto-edit metadata:', dbErr);
-        }
-      }
-    } catch (err: any) {
-      console.error('Auto-edit error:', err);
-      setAutoEditError(err.message || 'Failed to generate auto-edit. Please try again.');
-      setAutoEditProgress('');
-    } finally {
-      setAutoEditing(false);
-    }
-  };
-
-  const handleDownloadAutoEdit = () => {
-    if (!mergedVideo) return;
-    const a = document.createElement('a');
-    a.href = mergedVideo.objectUrl;
-    a.download = `${selectedFile?.name?.replace(/\.[^.]+$/, '') || 'video'}_auto_edited.mp4`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-  };
-
-  const handleUploadVideo = async () => {
+const handleUploadVideo = async () => {
     // Video and transcription are already saved incrementally
     // This final step saves any remaining data (clips, analysis if not saved yet)
     if (!selectedFile || !selectedType || !firebaseUrl || !storagePath) {
@@ -1701,398 +1502,6 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
               </AccordionDetails>
             </Accordion>
           )}
-
-          {/* Review Prompt & Generate section */}
-          <Card
-            variant="outlined"
-            sx={{
-              p: 2,
-              mb: 2,
-              background: 'linear-gradient(135deg, rgba(99,102,241,0.05) 0%, rgba(236,72,153,0.05) 100%)',
-              borderColor: 'divider',
-            }}
-          >
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5 }}>
-              <Visibility color="primary" />
-              <Box>
-                <Typography variant="subtitle1" fontWeight={700}>
-                  Review AI Prompt & Generate Video
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  Review the full AI prompt before generating your edited video
-                </Typography>
-              </Box>
-            </Box>
-
-            {loadingPromptPreview && (
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1.5 }}>
-                <CircularProgress size={18} />
-                <Typography variant="body2" color="text.secondary">
-                  Building prompt preview...
-                </Typography>
-              </Box>
-            )}
-
-            <Button
-              variant="contained"
-              startIcon={<Visibility />}
-              onClick={handlePreviewPrompt}
-              fullWidth
-              disabled={loadingPromptPreview || !transcriptionSegments || transcriptionSegments.length === 0}
-              sx={{
-                background: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)',
-                '&:hover': {
-                  background: 'linear-gradient(135deg, #0d9488 0%, #0f766e 100%)',
-                },
-              }}
-            >
-              {loadingPromptPreview ? 'Loading...' : 'Review AI Prompt →'}
-            </Button>
-
-            {(!transcriptionSegments || transcriptionSegments.length === 0) && (
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1, textAlign: 'center' }}>
-                Transcript with timestamps is required for auto-edit
-              </Typography>
-            )}
-          </Card>
-        </Box>
-      );
-    }
-
-    // Step 6: Review AI Prompt & Generate
-    if (step === 'review-prompt') {
-      return (
-        <Box sx={{ py: 2 }}>
-          {error && (
-            <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
-              {error}
-            </Alert>
-          )}
-
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
-            <Box
-              sx={{
-                width: 48,
-                height: 48,
-                borderRadius: 1,
-                bgcolor: '#6366f1',
-                color: 'white',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <Code />
-            </Box>
-            <Box sx={{ flexGrow: 1 }}>
-              <Typography variant="subtitle1" fontWeight={700}>
-                Review AI Prompt
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                This is the exact prompt that will be sent to the AI model
-              </Typography>
-            </Box>
-          </Box>
-
-          {promptPreview && (
-            <>
-              {/* Stats chips */}
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 2 }}>
-                <Chip
-                  size="small"
-                  label={`Program: ${promptPreview.programType}`}
-                  color="primary"
-                  variant="outlined"
-                />
-                <Chip
-                  size="small"
-                  label={`~${promptPreview.estimatedTokens.toLocaleString()} tokens`}
-                  color={promptPreview.estimatedTokens > 100000 ? 'error' : promptPreview.estimatedTokens > 50000 ? 'warning' : 'success'}
-                  variant="outlined"
-                />
-                <Chip
-                  size="small"
-                  label={`${promptPreview.segmentCount} segments`}
-                  variant="outlined"
-                />
-                {promptPreview.compressionLevel > 0 && (
-                  <Chip
-                    size="small"
-                    label={`Compression: L${promptPreview.compressionLevel}`}
-                    color="warning"
-                    variant="outlined"
-                  />
-                )}
-                {promptPreview.twoPassUsed && (
-                  <Chip
-                    size="small"
-                    label="Two-pass mode"
-                    color="info"
-                    variant="outlined"
-                  />
-                )}
-              </Box>
-
-              {promptPreview.compressionNote && (
-                <Alert severity="info" sx={{ mb: 2, fontSize: '0.75rem' }}>
-                  {promptPreview.compressionNote}
-                </Alert>
-              )}
-
-              {/* System Prompt */}
-              <Accordion sx={{ mb: 1 }}>
-                <AccordionSummary expandIcon={<ExpandMore />}>
-                  <Typography variant="subtitle2" fontWeight={600}>
-                    System Prompt
-                  </Typography>
-                </AccordionSummary>
-                <AccordionDetails>
-                  <Box
-                    sx={{
-                      p: 1.5,
-                      borderRadius: 1,
-                      bgcolor: 'grey.900',
-                      color: 'grey.100',
-                      fontFamily: 'monospace',
-                      fontSize: '0.75rem',
-                      lineHeight: 1.6,
-                      whiteSpace: 'pre-wrap',
-                      wordBreak: 'break-word',
-                      maxHeight: 200,
-                      overflow: 'auto',
-                    }}
-                  >
-                    {promptPreview.systemPrompt}
-                  </Box>
-                </AccordionDetails>
-              </Accordion>
-
-              {/* User Prompt (the big one) */}
-              <Accordion defaultExpanded sx={{ mb: 2 }}>
-                <AccordionSummary expandIcon={<ExpandMore />}>
-                  <Typography variant="subtitle2" fontWeight={600}>
-                    User Prompt (sent to AI)
-                  </Typography>
-                </AccordionSummary>
-                <AccordionDetails>
-                  <Box
-                    sx={{
-                      p: 1.5,
-                      borderRadius: 1,
-                      bgcolor: 'grey.900',
-                      color: 'grey.100',
-                      fontFamily: 'monospace',
-                      fontSize: '0.7rem',
-                      lineHeight: 1.5,
-                      whiteSpace: 'pre-wrap',
-                      wordBreak: 'break-word',
-                      maxHeight: 400,
-                      overflow: 'auto',
-                    }}
-                  >
-                    {promptPreview.userPrompt}
-                  </Box>
-                </AccordionDetails>
-              </Accordion>
-
-              {/* Auto-Edit Section */}
-              <Divider sx={{ my: 2 }} />
-              
-              <Card
-                variant="outlined"
-                sx={{
-                  p: 2,
-                  mb: 2,
-                  background: 'linear-gradient(135deg, rgba(99,102,241,0.05) 0%, rgba(236,72,153,0.05) 100%)',
-                  borderColor: mergedVideo ? 'success.main' : 'divider',
-                }}
-              >
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5 }}>
-                  <AutoFixHigh color={mergedVideo ? 'success' : 'primary'} />
-                  <Box>
-                    <Typography variant="subtitle1" fontWeight={700}>
-                      {mergedVideo ? 'Auto-Edited Video Ready' : 'Generate Final Video'}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      {mergedVideo
-                        ? 'Your AI-edited video is ready for preview and download'
-                        : 'Send the prompt above to generate your edited video'}
-                    </Typography>
-                  </Box>
-                </Box>
-
-                {/* Auto-edit progress */}
-                {autoEditing && (
-                  <Box sx={{ mb: 2 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
-                      <CircularProgress size={18} />
-                      <Typography variant="body2" color="text.secondary">
-                        {autoEditProgress || 'Processing...'}
-                      </Typography>
-                    </Box>
-                    <LinearProgress />
-                  </Box>
-                )}
-
-                {/* Auto-edit error */}
-                {autoEditError && (
-                  <Alert severity="error" sx={{ mb: 2 }}>
-                    {autoEditError}
-                  </Alert>
-                )}
-
-                {/* Stats */}
-                {autoEditStats && !mergedVideo && !autoEditing && (
-                  <Alert severity="info" sx={{ mb: 2 }}>
-                    AI identified {autoEditStats.clipsCount} segments to keep 
-                    ({autoEditStats.keepPercent}% of original). Processing...
-                  </Alert>
-                )}
-
-                {/* Final merged video */}
-                {mergedVideo && (
-                  <Box sx={{ mb: 2 }}>
-                    {/* Video preview */}
-                    <Box
-                      sx={{
-                        position: 'relative',
-                        width: '100%',
-                        borderRadius: 2,
-                        overflow: 'hidden',
-                        bgcolor: 'black',
-                        mb: 1.5,
-                      }}
-                    >
-                      <video
-                        src={mergedVideo.objectUrl}
-                        controls
-                        style={{ width: '100%', display: 'block', maxHeight: 300 }}
-                      />
-                    </Box>
-
-                    {/* Stats row */}
-                    {autoEditStats && (
-                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 1.5 }}>
-                        <Chip
-                          size="small"
-                          label={`${autoEditStats.clipsCount} clips`}
-                          color="primary"
-                          variant="outlined"
-                        />
-                        <Chip
-                          size="small"
-                          label={`${autoEditStats.editedDuration?.toFixed(1) || '?'}s edited`}
-                          color="success"
-                          variant="outlined"
-                        />
-                        <Chip
-                          size="small"
-                          label={`${autoEditStats.keepPercent}% kept`}
-                          color="info"
-                          variant="outlined"
-                        />
-                        <Chip
-                          size="small"
-                          label={`${(mergedVideo.fileSize / (1024 * 1024)).toFixed(1)} MB`}
-                          variant="outlined"
-                        />
-                        {autoEditStats.highlightCount > 0 && (
-                          <Chip
-                            size="small"
-                            label={`${autoEditStats.highlightCount} highlights`}
-                            color="warning"
-                            variant="outlined"
-                          />
-                        )}
-                      </Box>
-                    )}
-
-                    {/* Edit clips breakdown */}
-                    {autoEditClips.length > 0 && (
-                      <Accordion sx={{ mb: 1.5 }}>
-                        <AccordionSummary expandIcon={<ExpandMore />}>
-                          <Typography variant="caption" fontWeight={600}>
-                            Edit Breakdown ({autoEditClips.length} segments)
-                          </Typography>
-                        </AccordionSummary>
-                        <AccordionDetails sx={{ maxHeight: 200, overflow: 'auto' }}>
-                          {autoEditClips.map((clip: any, idx: number) => (
-                            <Box
-                              key={idx}
-                              sx={{
-                                display: 'flex',
-                                gap: 1,
-                                mb: 0.75,
-                                alignItems: 'flex-start',
-                              }}
-                            >
-                              <Chip
-                                size="small"
-                                label={`${formatTimestamp(clip.start)}\u2013${formatTimestamp(clip.end)}`}
-                                color={clip.type === 'highlight' ? 'warning' : 'default'}
-                                variant="outlined"
-                                sx={{ flexShrink: 0, fontFamily: 'monospace', fontSize: '0.7rem' }}
-                              />
-                              <Typography variant="caption" color="text.secondary">
-                                {clip.reason}
-                              </Typography>
-                            </Box>
-                          ))}
-                        </AccordionDetails>
-                      </Accordion>
-                    )}
-
-                    {/* Download button */}
-                    <Button
-                      variant="contained"
-                      startIcon={<Download />}
-                      onClick={handleDownloadAutoEdit}
-                      fullWidth
-                      sx={{
-                        background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                        '&:hover': {
-                          background: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
-                        },
-                      }}
-                    >
-                      Download Auto-Edited Video ({(mergedVideo.fileSize / (1024 * 1024)).toFixed(1)} MB)
-                    </Button>
-                  </Box>
-                )}
-
-                {/* Generate button (when no merged video yet) */}
-                {!mergedVideo && !autoEditing && (
-                  <Button
-                    variant="contained"
-                    startIcon={<AutoFixHigh />}
-                    onClick={handleAutoEdit}
-                    fullWidth
-                    sx={{
-                      background: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)',
-                      '&:hover': {
-                        background: 'linear-gradient(135deg, #0d9488 0%, #0f766e 100%)',
-                      },
-                    }}
-                  >
-                    Generate Final Video with AI Edits
-                  </Button>
-                )}
-
-                {/* Regenerate button (when merged video exists) */}
-                {mergedVideo && (
-                  <Button
-                    variant="outlined"
-                    startIcon={<AutoFixHigh />}
-                    onClick={handleAutoEdit}
-                    fullWidth
-                    sx={{ mt: 1 }}
-                  >
-                    Regenerate Auto-Edit
-                  </Button>
-                )}
-              </Card>
-            </>
-          )}
         </Box>
       );
     }
@@ -2184,7 +1593,7 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
               setTranscriptionSegments([]);
             }}
             variant="outlined"
-            disabled={transcribing || uploading || autoEditing}
+            disabled={transcribing || uploading}
           >
             Back
           </Button>
@@ -2251,7 +1660,7 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
             <Button
               onClick={handleUploadVideo}
               variant="contained"
-              disabled={uploading || autoEditing}
+              disabled={uploading}
               sx={{
                 background: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)',
                 '&:hover': {
@@ -2272,14 +1681,14 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
           <Button
             onClick={() => setStep('analyze')}
             variant="outlined"
-            disabled={autoEditing}
+            
           >
             Back
           </Button>
           <Button
             onClick={handleUploadVideo}
             variant="contained"
-            disabled={uploading || autoEditing}
+            disabled={uploading}
             sx={{
               background: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)',
               '&:hover': {
@@ -2293,40 +1702,13 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
       );
     }
 
-    if (step === 'review-prompt') {
-      return (
-        <>
-          <Button
-            onClick={() => setStep('recommend')}
-            variant="outlined"
-            disabled={autoEditing}
-          >
-            Back
-          </Button>
-          <Button
-            onClick={handleUploadVideo}
-            variant="contained"
-            disabled={uploading || autoEditing}
-            sx={{
-              background: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)',
-              '&:hover': {
-                background: 'linear-gradient(135deg, #0d9488 0%, #0f766e 100%)',
-              },
-            }}
-          >
-            {uploading ? 'Saving...' : (savedDocId ? 'Finish & Close' : 'Finish')}
-          </Button>
-        </>
-      );
-    }
-
-  };
+      };
 
   return (
     <Dialog 
       open={open} 
       onClose={handleClose}
-      maxWidth={step === 'type' || step === 'review-prompt' ? 'md' : 'sm'}
+      maxWidth={step === 'type' ? 'md' : 'sm'}
       fullWidth
       fullScreen={isMobile}
       PaperProps={{
@@ -2343,7 +1725,7 @@ export default function AddVideoDialog({ open, onClose, projectId, userId, onVid
               Add Video
             </Typography>
           </Box>
-          <IconButton onClick={handleClose} size="small" disabled={transcribing || uploading || autoEditing}>
+          <IconButton onClick={handleClose} size="small" disabled={transcribing || uploading}>
             <Close />
           </IconButton>
         </Box>
