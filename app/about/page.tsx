@@ -32,7 +32,7 @@ const features = [
       'Describe what you want and our LLM identifies the best segments from your video automatically.',
   },
   {
-    icon: VideoLibrary,
+    icon: <VideoLibrary sx={{ fontSize: 32 }} />,
     title: 'Cloud Transcription',
     description:
       'Google Video Intelligence transcribes speech in 50+ languages with word-level timestamps.',
